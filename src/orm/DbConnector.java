@@ -212,6 +212,9 @@ public class DbConnector {
 
 
 	protected boolean doesTableExist(String tableName) {
+		if(tableName == null) {
+			return false;
+		}
 		try (Connection conn = getConnection()){
 			DatabaseMetaData dbm = conn.getMetaData();
 			ResultSet rs = dbm.getTables(getDbName(), null,  tableName.toLowerCase(), null);

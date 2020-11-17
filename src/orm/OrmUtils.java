@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 
 import annotations.ForeignKey;
 import annotations.ManyToMany;
@@ -29,6 +30,13 @@ public class OrmUtils {
 	 * Tables are represented by Entity extending class types
 	 */
 	private static Map<Class<? extends Entity<?>>, List<Class<? extends Entity<?>>>> relations = new HashMap<>();
+	private static DbConnector db = DbConnector.getInstance();
+	
+	/**
+	 * Name of the primary key field in class Entity
+	 * This String can only be change id if the primary Key changes
+	 */
+	public static final String ENTITY_PK_FIELDNAME = "id_entity";
 	
 	/**
 	 * Method wich should be invoked first before any interactions can be made with the orm
@@ -39,8 +47,15 @@ public class OrmUtils {
 	 */
 	protected static boolean initTables(Class<? extends Entity<?>>[] entities) {
 		Orm.logger.notice("Initializing tables..");
+		if(!db.isOperatable()) {
+			Orm.logger.error("Database is not operatable! aboarding");
+			return false;
+		}
 		initRelations(entities);
-		return false;
+		Map<Class<? extends Entity<?>>, List<Class<? extends Entity<?>>>> order = getCreationOrder();
+		boolean succsess = crateTables(order);
+		Orm.logger.notice("Done..");
+		return succsess;
 	}
 	
 	/**
@@ -105,8 +120,146 @@ public class OrmUtils {
 		Orm.logger.notice("	Done!");
 	}
 	
+	/**
+	 * look through the ralation Map and figure out the order in wich tables should be created
+	 * Warns if the relations dont allow for table creation
+	 * 
+	 * @return the order needed to create tables
+	 */
+	private static Map<Class<? extends Entity<?>>, List<Entity<? extends Entity<?>>>> getCreationOrder(){
+		Orm.logger.notice("	Creating creation Order");
+		Map<Class<? extends Entity<?>>, List<Entity<? extends Entity<?>>>> pseudoCreated = new HashMap<>();//List of pseudo created Classes
+		int done = relations.size();
+		for (int i = 0; i < relations.size(); i++) {
+			if(pseudoCreated.size() == relations.size()) {
+				done = i;
+				break;
+			}
+			for (Entry<Class<? extends Entity<?>>, List<Class<? extends Entity<?>>>> entry : relations.entrySet()) {
+				if(pseudoCreated.containsKey(entry.getKey())){//check if already "crated"
+					continue;
+				}
+				boolean satisfied = true;
+				for (Class<? extends Entity<?>> type : entry.getValue()) {// check if all dependencies are "created"
+					if(!pseudoCreated.containsKey(type)) {
+						satisfied = false;
+					}
+				}
+				if(satisfied) {
+					pseudoCreated.put(entry.getKey(), );//"create"
+				}
+			}
+		}
+		if(done == relations.size()) {//no sucsess
+			Orm.logger.warn("		Could not define Creation order of tables! Do you have loops in your logic?");
+		} else { // succsess
+			Orm.logger.notice("		Created creation order in " + done + " / " + relations.size() + " iterations :)");
+			Orm.logger.notice("		order: " + pseudoCreated);
+		}
+		Orm.logger.notice("	Done!");
+		return pseudoCreated;
+	}
+	
+	private static List<Class<? extends Entity<?>>> getPointingClasses(Class<? extends Entity<?>> type){
+		List<Class<? extends Entity<?>>>  out = new ArrayList<>();
+		
+		return out;
+	}
+	
+	/**
+	 * loop through the given table classes and crate them
+	 * @param tables
+	 * @return succsess
+	 */
+	private static boolean crateTables(List<Class<? extends Entity<?>>> tables) {
+		Orm.logger.notice("	Creating tables...");
+		int skipped = 0;
+		for (Class<? extends Entity<?>> table : tables) {
+			if(!createTable(table)) {
+				skipped++;
+			}
+		}
+		if(skipped > 0) {
+			Orm.logger.notice("	->" + skipped + " Tables skipped");
+		}
+		Orm.logger.notice("	Done!");
+		return false;
+	}
+	
+	private static boolean createTable(Class<? extends Entity<?>> type) {
+		if(!isOrmTypeValid(type, false) || DbConnector.getInstance().doesTableExist(getTableName(type))) {
+			return false;
+		}
+		Table table = type.getAnnotation(Table.class);
+		if(table == null) {
+			return false;
+		}
+		SqlParams createParam = new SqlParams("CREATE TABLE " + getTableName(type) + "(" + getSqlFieldDeclaraionString(type) + ")");
+		createParam.sql += "CHARACTER SET " + table.charset();
+		createParam.sql += " ENGINE =  " + table.engine();
+		createParam.sql += ";";
+		return db.execute(createParam);
+	}
+	
+	private static String getSqlFieldDeclaraionString(Class<? extends Entity<?>> type) {
+		String out = "";
+		List<Field> pkFields = getPrimaryKeyFields(type);
+		List<Field> fkFields = getForeignKeyFields(type);
+		return out;
+	}
+	
 	private static Field getForeignKeyReferenceField(Field fkField, ForeignKey fk) {
 		return getForeignKeyReferenceField(fkField, fk, false);
+	}
+	
+	private static List<Field> getPrimaryKeyFields(Class<? extends Entity<?>> type){
+		List<Field> out = new ArrayList<>();
+		for (Field field : type.getDeclaredFields()) {
+			PrimaryKey pk = field.getAnnotation(PrimaryKey.class);
+			if(pk != null) {
+				if(SupportedTypes.isTypeValidForkey(field.getType())) {
+					out.add(field);
+				}
+			}
+		}
+		if(out.size() == 0) {
+			out.add(getSuperclassPk());
+		}
+		return out;
+	}
+	
+	private static List<Field> getForeignKeyFields(Class<? extends Entity<?>> type){
+		List<Field> out = new ArrayList<>();
+		for (Field field : type.getDeclaredFields()) {
+			ForeignKey fk = field.getAnnotation(ForeignKey.class);
+			if(fk != null) {
+				if(getForeignKeyReferenceField(field, fk) != null) {
+					out.add(field);
+				}
+			}
+		}
+		return out;
+	}
+	private static List<Field> get(Class<? extends Entity<?>> type){
+		List<Field> out = new ArrayList<>();
+		for (Field field : type.getDeclaredFields()) {
+			ForeignKey fk = field.getAnnotation(ForeignKey.class);
+			if(fk != null) {
+				if(getForeignKeyReferenceField(field, fk) != null) {
+					out.add(field);
+				}
+			}
+		}
+		return out;
+	}
+	
+	private static Field getSuperclassPk() {
+		try {
+			return Entity.class.getDeclaredField(ENTITY_PK_FIELDNAME);
+		} catch (NoSuchFieldException | SecurityException e) {
+			Orm.logger.warn(e.getMessage());
+			return null;
+		}
 	}
 	
 	private static Field getForeignKeyReferenceField(Field fkField, ForeignKey fk, boolean superClass) {
@@ -120,7 +273,7 @@ public class OrmUtils {
 			if(SupportedTypes.isTypeValidForkey(reference.getType())) {
 				if(fkField.getType() == reference.getType()) {
 					if(reference.getAnnotation(PrimaryKey.class) == null) {
-						Orm.logger.warn("The Foreign key at \"" + fk.referenceTable() + "\", \"" + fk.field() + "\" is pointing to a non Primary key");
+						Orm.logger.warn("The Foreign key at \"" + fk.referenceTable() + "\", \"" + fk.field() + "\" is pointing to a non Primary key Field");
 					}
 					return reference;
 				} else {

@@ -7,6 +7,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 
 import orm.Entity;
+import orm.OrmUtils;
 
 /**
  * Foreign Key Annotation used for declaring a field as ForeignKey
@@ -23,5 +24,5 @@ import orm.Entity;
 public @interface ForeignKey {
 
 	Class<? extends Entity<?>> referenceTable();
-	String field() default "id";
+	String field() default OrmUtils.ENTITY_PK_FIELDNAME;
 }

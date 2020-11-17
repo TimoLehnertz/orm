@@ -59,6 +59,7 @@ public class A_Tester {
 		
 //		System.out.println(timetable);
 		
+		Orm.initDb("localhost", "root", "", "orm_test");
 		Orm.initTables(Day.class, Hour.class, Lesson.class, Room.class, SchoolClass.class, Subject.class, Teacher.class, Timetable.class, TeacherHasSubjects.class);
 	}
 }

@@ -1,5 +1,6 @@
 package orm;
 
+import annotations.AutoIncrement;
 import annotations.PrimaryKey;
 
 /**
@@ -12,8 +13,9 @@ import annotations.PrimaryKey;
 
 public class Entity<T extends Entity<?>> {
 	
-	@PrimaryKey(autoIncrement = true)
-	protected long id;
+	@PrimaryKey
+	@AutoIncrement
+	protected long id_entity;
 	
 	/**
 	 * Saves/updates this instance and all its content to the database

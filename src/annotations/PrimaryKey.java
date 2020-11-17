@@ -20,6 +20,4 @@ import java.lang.annotation.Target;
 @Retention(RUNTIME)
 @Target(FIELD)
 public @interface PrimaryKey {
-
-	boolean autoIncrement() default true;
 }
