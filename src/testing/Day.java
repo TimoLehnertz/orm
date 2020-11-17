@@ -8,7 +8,7 @@ import annotations.Table;
 import orm.Entity;
 
 @Table(name = "day")
-public class Day extends Entity<Lesson> {
+public class Day extends Entity<Day> {
 
 	@OneToMany(referenceTable = Lesson.class)
 	List<Lesson> lessons;

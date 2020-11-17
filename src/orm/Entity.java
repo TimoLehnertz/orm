@@ -1,7 +1,6 @@
 package orm;
 
 import annotations.AutoIncrement;
-import annotations.PrimaryKey;
 
 /**
  * Class for easy access to Orm features
@@ -13,7 +12,6 @@ import annotations.PrimaryKey;
 
 public class Entity<T extends Entity<?>> {
 	
-	@PrimaryKey
 	@AutoIncrement
 	protected long id_entity;
 	

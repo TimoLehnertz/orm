@@ -14,7 +14,7 @@ import orm.OrmUtils;
  * 
  * Used for declaring a field to be representing a one to one relationship
  * 
- * Schould Only be applied to valid Table Entities
+ * Schould Only be applied to valid Table Entities(Entity extending class fields)
  * 
  * @author timo
  *
@@ -23,25 +23,9 @@ import orm.OrmUtils;
 @Retention(RUNTIME)
 @Target(FIELD)
 public @interface OneToOne {
+	/**
+	 * Adds a foreign key in the own table with @Unique referencing the referenced tables primary key
+	 * @return
+	 */
 	Class<? extends Entity<?>> referenceTable();
-	
-	/**
-	 * Field Column in the <b>OWN</b> table wich will be used to map the foreign Entity
-	 * 
-	 * if default value is given(<empty string>) an automatic Column with @Unique, @AutoIncrement will be created
-	 * 
-	 * Needs to be referencing a @Unique field in all cases if its not the OneToOne Relation is NOT operatable
-	 * 
-	 * Can be set to OrmUtils.ENTITY_PK_FIELDNAME or whats set on the other side to crate a dual sided one to one relation
-	 */
-	String ownReferenceField() default "";
-	
-	/**
-	 * Field Column in the <b>FOREIGN</b> table wich will be used to map the foreign Entity
-	 * 
-	 * if default value is given(ENTITY_PK_FIELDNAME) the relations primary key will be used
-	 * 
-	 * Needs to be referencing a @Unique field in all cases if its not the OneToOne Relation is NOT operatable
-	 */
-	String foreignReferenceField() default OrmUtils.ENTITY_PK_FIELDNAME;
 }

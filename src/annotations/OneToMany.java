@@ -11,7 +11,6 @@ import orm.OrmUtils;
 
 /**
  * One To Many Annotation used for declaring a field to be Referenced as One To many
- * 
  * Should ony be applied to List fields
  * 
  * @author timo
@@ -21,16 +20,10 @@ import orm.OrmUtils;
 @Retention(RUNTIME)
 @Target(FIELD)
 public @interface OneToMany {
+	/**
+	 * Table to reference to.
+	 * Creates a foreign key in the referenced table referencing the primary key in this table
+	 * @return
+	 */
 	Class<? extends Entity<?>> referenceTable();
-	
-	/**
-	 * Field / Column wich the reference table should be creating a foreign Key to
-	 * @return
-	 */
-	String ownReferenceField() default OrmUtils.ENTITY_PK_FIELDNAME;
-	/**
-	 * Field / column in the own table with the Foreign key should be referencing to
-	 * @return
-	 */
-	String foreignReferenceField() default OrmUtils.ENTITY_PK_FIELDNAME;
 }

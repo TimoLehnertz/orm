@@ -22,5 +22,4 @@ import orm.Entity;
 @Target(FIELD)
 public @interface ManyToMany {
 	Class<? extends Entity<?>> referenceTable();
-	Class<? extends Entity<?>> linkTable();
 }

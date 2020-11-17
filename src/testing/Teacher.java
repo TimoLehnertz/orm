@@ -18,7 +18,7 @@ public class Teacher extends Entity<Lesson> {
 	@Varchar(size = 200)
 	String surename;
 	
-	@ManyToMany(referenceTable = Subject.class, linkTable = TeacherHasSubjects.class)
+	@ManyToMany(referenceTable = Subject.class)
 	List<Subject> subjects;
 	
 	public Teacher() {
