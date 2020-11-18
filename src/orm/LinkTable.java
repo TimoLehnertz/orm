@@ -32,6 +32,8 @@ class LinkTable {
 		return s + ");";
 	}
 	
+	
+	
 	public String getTableName() {
 		return OrmUtils.getTableName(linkA) + "X" + OrmUtils.getTableName(linkB);
 	}
