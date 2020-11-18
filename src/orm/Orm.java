@@ -35,6 +35,9 @@ public class Orm {
 		initDb(host, username, password, "test");
 	}
 	
+	public static boolean dropDatabase() {
+		return db.execute("DROP DATABASE IF EXISTS " + db.dbName + ";");
+	}
 	
 	@SafeVarargs
 	public static boolean initTables(Class<? extends Entity<?>> ... entities) {
@@ -79,9 +82,5 @@ public class Orm {
 
 	public static void setDbUrl(String dbUrl) {
 		db.setDbUrl(dbUrl);
-	}
-
-	public static void setDebug(boolean degug) {
-		db.setDebugMode(degug);
 	}
 }

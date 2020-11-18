@@ -32,8 +32,6 @@ public class DbConnector {
 	
 	private Connection conn = null;
 	
-	private boolean debug = false;
-	
 	private static DbConnector instance = new DbConnector();
 	
 	private DbConnector() {
@@ -73,15 +71,13 @@ public class DbConnector {
 				}
 				resultSet.close();
 			} catch (SQLException e) {
-				System.err.println(e.getMessage());
+				Orm.logger.error(e.getMessage());
 				return false;
 			}
 			Statement stmt = conn.createStatement();
 			if(!dbExists) {
 				try {
-					if(debug) {
-						System.out.println("Creating DATABASE: \"" + dbName + "\"");
-					}
+					Orm.logger.debug("Creating DATABASE: \"" + dbName + "\"");
 					stmt.execute("CREATE DATABASE " + dbName + ";");
 				} catch (SQLException e) {
 					e.printStackTrace();
@@ -92,7 +88,7 @@ public class DbConnector {
 			stmt.close();
 			return true;
 		} catch (SQLException e) {
-			System.err.println(e.getMessage());
+			Orm.logger.error(e.getMessage());
 			return false;
 		}
 	} 
@@ -110,9 +106,7 @@ public class DbConnector {
 	}
 	
 	protected long executeInsert(SqlParams params) {
-		if(debug) {
-			System.out.println("executingInsert: " + params.sql);
-		}
+		Orm.logger.debug("executingInsert: " + params.sql);
 		if(!isOperatable()) {
 			return -1;
 		}
@@ -132,10 +126,6 @@ public class DbConnector {
 			}
 		} catch(Exception e) {
 			e.printStackTrace();
-		} finally {
-			if(debug) {
-				System.out.println("Done");
-			}
 		}
 		return -1;
 	}
@@ -148,9 +138,7 @@ public class DbConnector {
 		if(!isOperatable()) {
 			return new ArrayList<Map<String, Object>>();
 		}
-		if(debug) {
-			System.out.println("executeQuery: " + params.sql);
-		}
+		Orm.logger.debug("executeQuery: " + params.sql);
 		List<Map<String, Object>> rsList = new ArrayList<Map<String, Object>>();
 		try(Connection conn = getConnection()) {
 			try(PreparedStatement stmt = conn.prepareStatement(params.sql)){
@@ -169,10 +157,6 @@ public class DbConnector {
 			}
 		}catch(SQLException e) {
 			e.printStackTrace();
-		} finally {
-			if(debug) {
-				System.out.println("Done");
-			}
 		}
 		return rsList;
 	}
@@ -189,9 +173,7 @@ public class DbConnector {
 		if(params == null || !isOperatable()) {
 			return false;
 		}
-		if(debug) {
-			System.out.println("execute: " + params.sql);
-		}
+		Orm.logger.debug("execute: " + params.sql);
 		try(Connection conn = getConnection()) {
 			try(PreparedStatement stmt = conn.prepareStatement(params.sql)) {
 				params.bindParams(stmt);
@@ -202,17 +184,13 @@ public class DbConnector {
 			return true;
 		} catch (SQLException e1) {
 			e1.printStackTrace();
-		} finally {
-			if(debug) {
-				System.out.println("Done!");
-			}
 		}
 		return false;
 	}
 
 
 	protected boolean doesTableExist(String tableName) {
-		if(tableName == null) {
+		if(tableName == null || !isOperatable()) {
 			return false;
 		}
 		try (Connection conn = getConnection()){
@@ -268,9 +246,5 @@ public class DbConnector {
 
 	protected void setDbUrl(String dbUrl) {
 		this.dbUrl = dbUrl;
-	}
-
-	protected void setDebugMode(boolean degug) {
-		this.debug = degug;
 	}
 }

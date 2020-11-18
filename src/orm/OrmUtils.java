@@ -28,7 +28,16 @@ public class OrmUtils {
 	 * 
 	 * Tables are represented by Entity extending class types
 	 */
-	private static Map<Class<? extends Entity<?>>, List<FK>> fkRelations = new LinkedHashMap<>();
+	private static Map<Class<?>, List<FK>> fkRelations = new LinkedHashMap<>();
+	
+	/**
+	 * Link tables for many to many relations
+	 */
+	private static List<LinkTable> linkTables = new ArrayList<>();
+	
+	/**
+	 * Simplified Database access
+	 */
 	private static DbConnector db = DbConnector.getInstance();
 	
 	/**
@@ -36,6 +45,11 @@ public class OrmUtils {
 	 * This String can only be change id if the primary Key changes
 	 */
 	public static final String ENTITY_PK_FIELDNAME = "id_entity";
+	
+	/**
+	 * tabs for debugging
+	 */
+	int tabs = 0;
 	
 	/**
 	 * Method wich should be invoked first before any interactions can be made with the orm
@@ -50,30 +64,36 @@ public class OrmUtils {
 			Orm.logger.error("Database is not operatable! aboarding");
 			return false;
 		}
+		Orm.logger.incrementTab();
 		
 		initForeignKeys(entities);
 		
 		sortRelations(); // sort fkRelations
 		
-		boolean succsess = crateTables();
-		Orm.logger.notice("Done..");
+		boolean succsess = crateTables();//crate tables
+		
+		Orm.logger.decrementTab();
+		Orm.logger.notice("Done");
 		return succsess;
 	}
-	
+
 	/**
 	 * gets invoked at start by initTables()
 	 * searches for dependencies betwween Tables and saves them into relations
 	 * @param entities Pool
 	 */
 	protected static void initForeignKeys(Class<? extends Entity<?>>[] entities) {
-		Orm.logger.notice("	Initializing table-dependencies");
+		Orm.logger.notice("Initializing table-dependencies..");
+		Orm.logger.incrementTab();
 		for (Class<? extends Entity<?>> type : entities) {
 			if(!isOrmTypeValid(type, true)) {
 				continue;
 			} else {
 				fkRelations.put(type, new ArrayList<FK>());
 				for (Field field : type.getDeclaredFields()) {
-					warnOrmField(field);
+					
+					warnOrmField(field);//look for suspicius use of annotations and warn the user
+					
 					if(!isOrmFieldvalid(field, false)) {
 						continue;//Skip no table fields
 					}
@@ -82,29 +102,37 @@ public class OrmUtils {
 					/**
 					 * One to Many => field is dependent on type
 					 */
+					OneToOne oto = field.getAnnotation(OneToOne.class);
 					OneToMany otm = field.getAnnotation(OneToMany.class);
-					if(otm != null) {
+					ManyToMany m2m = field.getAnnotation(ManyToMany.class);
+					if(otm != null && oto == null && m2m == null) {
 						Class<? extends Entity<?>> relationtable = otm.referenceTable();
 						if(!fkRelations.containsKey(relationtable)) {// No table registered yet
 							fkRelations.put(relationtable, new ArrayList<FK>());//register table
 						}
-						fkRelations.get(relationtable).add(new FK(type, field.getNampkjfdspif()));//add dependency for many table to own table
+						fkRelations.get(relationtable).add(new FK(type, field.getName()));//add dependency for "many" table to own table
 					}
 					/**
 					 * One To One
 					 * "type" has one ___
 					 * => "type" is dependent on ___
 					 */
-					OneToOne oto = field.getAnnotation(OneToOne.class);
-					if(oto != null) {
+					if(oto != null && otm == null) {
 						Class<? extends Entity<?>> relationtable = oto.referenceTable();
 						fkRelations.get(type).add(new FK(relationtable, ENTITY_PK_FIELDNAME));
+					}
+					
+					if(m2m != null && oto == null && otm == null) {
+						Orm.logger.notice("Initiated link table from: " + type + "." + field.getName() + " to table " + getTableName(m2m.referenceTable()));
+						final LinkTable link = new LinkTable(type, m2m.referenceTable(), field);
+						linkTables.add(link);
 					}
 				}
 			}
 		}
-		Orm.logger.notice("		Dependencies: " + fkRelations);
-		Orm.logger.notice("	Done!");
+		Orm.logger.notice("Dependencies: " + fkRelations);
+		Orm.logger.decrementTab();
+		Orm.logger.notice("Done!");
 	}
 	
 	/**
@@ -116,15 +144,16 @@ public class OrmUtils {
 	 * @return the order needed to create tables and their foreign keys
 	 */
 	private static void sortRelations(){
-		Orm.logger.notice("	Creating creation Order");
-		Map<Class<? extends Entity<?>>, List<FK>> pseudoCreated = new LinkedHashMap<>();//List of pseudo created Classes
+		Orm.logger.notice("Sorting creation Order..");
+		Orm.logger.incrementTab();
+		Map<Class<?>, List<FK>> pseudoCreated = new LinkedHashMap<>();//List of pseudo created Classes
 		int done = fkRelations.size();
 		for (int i = 0; i < fkRelations.size(); i++) {
 			if(pseudoCreated.size() == fkRelations.size()) {
 				done = i;
 				break;
 			}
-			for (Entry<Class<? extends Entity<?>>, List<FK>> entry : fkRelations.entrySet()) {
+			for (Entry<Class<?>, List<FK>> entry : fkRelations.entrySet()) {
 				if(pseudoCreated.containsKey(entry.getKey())){//check if already "created"
 					continue;
 				}
@@ -142,12 +171,13 @@ public class OrmUtils {
 			}
 		}
 		if(done == fkRelations.size()) {//no sucsess
-			Orm.logger.warn("		Could not define Creation order of tables! Do you have loops in your logic?");
+			Orm.logger.warn("Could not define Creation order of tables! Do you have loops in your logic?");
 		} else { // succsess
-			Orm.logger.notice("		Created creation order in " + done + " / " + fkRelations.size() + " iterations :)");
-			Orm.logger.notice("		order: " + pseudoCreated);
+			Orm.logger.notice("Created creation order in " + done + " / " + fkRelations.size() + " iterations :)");
+			Orm.logger.notice("order: " + pseudoCreated);
 		}
-		Orm.logger.notice("	Done!");
+		Orm.logger.decrementTab();
+		Orm.logger.notice("Done!");
 		fkRelations = pseudoCreated;//applying sort
 	}
 	
@@ -157,21 +187,52 @@ public class OrmUtils {
 	 * @return succsess
 	 */
 	private static boolean crateTables() {
-		Orm.logger.notice("	Creating tables...");
+		Orm.logger.notice("Creating tables...");
+		Orm.logger.incrementTab();
 		int skipped = 0;
-		for (Entry<Class<? extends Entity<?>>, List<FK>> entry : fkRelations.entrySet()) {
+		for (Entry<Class<?>, List<FK>> entry : fkRelations.entrySet()) {
 			if(!createTable(entry.getKey(), entry.getValue())) {
 				skipped++;
 			}
 		}
 		if(skipped > 0) {
-			Orm.logger.notice("	->" + skipped + " Tables skipped");
+			Orm.logger.notice("->" + skipped + " Tables skipped");
 		}
-		Orm.logger.notice("	Done!");
+		
+		createLinkTables();
+		
+		Orm.logger.decrementTab();
+		Orm.logger.notice("Done!");
 		return false;
 	}
 	
-	private static boolean createTable(Class<? extends Entity<?>> type, List<FK> foreignKeys) {
+	/**
+	 * Create link tables based on the linkTables array
+	 * @return
+	 */
+	private static boolean createLinkTables() {
+		Orm.logger.notice("Creating link tables");
+		Orm.logger.incrementTab();
+		boolean succsess = true;
+		for (LinkTable linkTable : linkTables) {
+			if(!linkTable.isCreated()) {
+				Orm.logger.notice("Creating Link table \"" + linkTable.getTableName() + "\"");
+				Orm.logger.debug(linkTable.getCreateSql());
+				boolean tmp = db.execute(linkTable.getCreateSql());
+				if(!tmp) {
+					Orm.logger.warn("Failed creating Link table \"" + linkTable.getTableName() + "\"");
+				}
+				succsess &= tmp;
+			} else {
+				Orm.logger.debug("Skipped " +  linkTable.getTableName() + "(Already exists)");
+			}
+		}
+		Orm.logger.decrementTab();
+		Orm.logger.notice("Done");
+		return succsess;
+	}
+	
+	private static boolean createTable(Class<?> type, List<FK> foreignKeys) {
 		if(!isOrmTypeValid(type, false) || DbConnector.getInstance().doesTableExist(getTableName(type))) {
 			return false;
 		}
@@ -183,10 +244,11 @@ public class OrmUtils {
 		createParam.sql += "CHARACTER SET = " + table.charset();
 		createParam.sql += " ENGINE =  " + table.engine();
 		createParam.sql += ";";
-		return db.execute(createParam);
+//		return db.execute(createParam);
+		return false;
 	}
 	
-	private static String getSqlFieldDeclaraionString(Class<? extends Entity<?>> type, List<FK> foreignKeys) {
+	private static String getSqlFieldDeclaraionString(Class<?> type, List<FK> foreignKeys) {
 		String out = ENTITY_PK_FIELDNAME + " INT PRIMARY KEY";
 		for (FK fk : foreignKeys) {
 			out += getTableName(fk.getReferenceTable()) + " INT";
@@ -194,6 +256,10 @@ public class OrmUtils {
 		return out;
 	}
 	
+	/**
+	 * Get the primary key field which is declare in entity
+	 * @return
+	 */
 	private static Field getPrimaryKeyField(){
 		try {
 			return Entity.class.getDeclaredField(ENTITY_PK_FIELDNAME);
@@ -328,10 +394,10 @@ public class OrmUtils {
 		if(isFieldNoOrm(field)) {
 			return;
 		}
+		OneToOne oneToOne = field.getAnnotation(OneToOne.class);
+		OneToMany oneToMany = field.getAnnotation(OneToMany.class);
+		ManyToMany manyToMany = field.getAnnotation(ManyToMany.class);
 		if(isTypeSubTypeFromEntity(field.getType())){//subtype
-			OneToOne oneToOne = field.getAnnotation(OneToOne.class);
-			OneToMany oneToMany = field.getAnnotation(OneToMany.class);
-			ManyToMany manyToMany = field.getAnnotation(ManyToMany.class);
 			if(manyToMany != null) {
 				Orm.logger.warn("Field \"" + field + "\" not compatible with Annotation ManyToMany");
 			} if(oneToMany != null) {
@@ -341,13 +407,12 @@ public class OrmUtils {
 			}
 		} else if(isListClass(field.getType())) {//list Field
 			if(isOrmTypeValid(getGenericClassFromListField(field), false)) {
-				ManyToMany manyToMany = field.getAnnotation(ManyToMany.class);
-				OneToMany oneToMany = field.getAnnotation(OneToMany.class);
-				OneToOne oneToOne = field.getAnnotation(OneToOne.class);
 				if(oneToOne != null) {
 					Orm.logger.warn("Field \"" + field + "\" not compatible with Annotation OneToOne");
 				} else if(manyToMany == null && oneToMany == null) {
 					Orm.logger.warn("List Field \"" + field + "\" is compatible but No Annotation was found SKIPPED add @NoOrm to surpress this warning");
+				} else if(manyToMany != null && oneToMany != null){
+					Orm.logger.warn("List Field \"" + field + "\" is compatible not compatible with manyToMany AND oneToMany");
 				}
 			}
 		} else if(SupportedTypes.isTypeSupported(field.getType())) {//"primitive" Field
@@ -374,7 +439,7 @@ public class OrmUtils {
 	 * @param type
 	 * @return table name or null in case of error
 	 */
-	protected static String getTableName(Class<? extends Entity<?>> type) {
+	protected static String getTableName(Class<?> type) {
 		Table table = type.getAnnotation(Table.class);
 		if(table == null) {
 			Orm.logger.warn("You did not provide a Table Anotation for class \"" + type + "\"! Please do so by adding @Table(name = \"<tableName>\"");
@@ -424,7 +489,7 @@ public class OrmUtils {
 	 * @param n
 	 * @return n tabs as String
 	 */
-	private static String getnTabs(int n) {
+	public static String getnTabs(int n) {
 		String out = "";
 		for (int i = 0; i < n; i++) {
 			out += "\t";
