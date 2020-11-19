@@ -63,7 +63,7 @@ public class A_Tester {
 		
 		Orm.initDb("localhost", "root", "", "orm_test");
 		Orm.logger.setLoglevel(Logger.DEBUG);
-//		Orm.dropDatabase();
+		Orm.dropDatabase();
 		Orm.initTables(Day.class, Hour.class, Lesson.class, Room.class, SchoolClass.class, Subject.class, Teacher.class, Timetable.class);
 		timetable.save();
 	}
