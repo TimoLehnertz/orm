@@ -16,7 +16,7 @@ import java.lang.annotation.Target;
 
 @Retention(RUNTIME)
 @Target(FIELD)
-public @interface Varchar {
+public @interface SqlVarchar {
 
 	int size() default 100;
 }

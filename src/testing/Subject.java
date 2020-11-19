@@ -4,16 +4,16 @@ import java.util.List;
 
 import annotations.ManyToMany;
 import annotations.Table;
-import annotations.Varchar;
+import annotations.SqlVarchar;
 import orm.Entity;
 
 @Table(name = "subject")
 public class Subject extends Entity<Lesson> {
 
-	@Varchar(size = 200)
+	@SqlVarchar(size = 200)
 	String name;
 	
-	@Varchar(size = 200)
+	@SqlVarchar(size = 200)
 	String description;
 	
 	@ManyToMany(referenceTable = Teacher.class)

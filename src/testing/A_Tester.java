@@ -6,6 +6,7 @@ import java.time.LocalTime;
 import java.util.Arrays;
 import java.util.List;
 
+import orm.Logger;
 import orm.Orm;
 
 /**
@@ -22,7 +23,7 @@ public class A_Tester {
 		Subject ep = new Subject("EP", "Elektro-Prozesstechnik");
 		
 		Teacher ti = new Teacher("Valentina", "Tikko", Arrays.asList(prg));
-		Teacher goi = new Teacher("Giovanni", "Giovinazzo", Arrays.asList(wfmd));
+		Teacher goi = new Teacher("Giovanni", "Giovinazzo", Arrays.asList(ep));
 		Teacher ro = new Teacher("Wolfgang", "Rosenthatl", Arrays.asList(wfmd));
 		
 		Room b207 = new Room("B207", 30, true);
@@ -42,7 +43,7 @@ public class A_Tester {
 				new Hour(10, Time.valueOf(LocalTime.of(16, 5)), Time.valueOf(LocalTime.of(16, 50))));
 		
 		List<Lesson> lessons = Arrays.asList(new Lesson(
-				wfmd, b207, ro, null, hours.get(0)),
+						   wfmd, b207, ro, null, hours.get(0)),
 				new Lesson(wfmd, b207, ro, null, hours.get(1)),
 				new Lesson(wfmd, b207, ro, null, hours.get(2)),
 				new Lesson(ep, b207, goi, null, hours.get(3)),
@@ -59,8 +60,11 @@ public class A_Tester {
 		
 //		System.out.println(timetable);
 		
+		
 		Orm.initDb("localhost", "root", "", "orm_test");
-		Orm.dropDatabase();
+		Orm.logger.setLoglevel(Logger.DEBUG);
+//		Orm.dropDatabase();
 		Orm.initTables(Day.class, Hour.class, Lesson.class, Room.class, SchoolClass.class, Subject.class, Teacher.class, Timetable.class);
+		timetable.save();
 	}
 }

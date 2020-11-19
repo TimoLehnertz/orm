@@ -3,6 +3,12 @@ package orm;
 public class Orm {
 
 	/**
+	 * States
+	 */
+	public static final int READ_ONLY = 0;
+	public static final int READ_WRITE = 1;
+
+	/**
 	 * Simplified acces to DbConnector Object
 	 */
 	private static DbConnector db = DbConnector.getInstance();
@@ -11,6 +17,8 @@ public class Orm {
 	 * Better logging for eleminating dublicate logs and enabling log level option
 	 */
 	public static Logger logger = new Logger();
+	
+	
 	
 	/**
 	 * 
@@ -36,6 +44,7 @@ public class Orm {
 	}
 	
 	public static boolean dropDatabase() {
+		logger.info("Dropping Database \"" + db.getDbName() + "\"");
 		return db.execute("DROP DATABASE IF EXISTS " + db.dbName + ";");
 	}
 	
@@ -44,6 +53,13 @@ public class Orm {
 		return OrmUtils.initTables(entities);
 	}
 	
+	public static boolean isEntityValidForSafe(Entity<?> e) {
+		return OrmUtils.isEntityValidForSave(e);
+	}
+	
+	public static long save(Entity<?> entity) {
+		return OrmUtils.saveEntity(entity, null, 0);
+	}
 	
 	/**
 	 * Getters /  Setters
@@ -82,5 +98,13 @@ public class Orm {
 
 	public static void setDbUrl(String dbUrl) {
 		db.setDbUrl(dbUrl);
+	}
+	
+	public static int getMode() {
+		return OrmUtils.state;
+	}
+
+	public static void setmode(int state) {
+		OrmUtils.state = state;
 	}
 }

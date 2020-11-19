@@ -77,8 +77,10 @@ public class DbConnector {
 			Statement stmt = conn.createStatement();
 			if(!dbExists) {
 				try {
-					Orm.logger.debug("Creating DATABASE: \"" + dbName + "\"");
-					stmt.execute("CREATE DATABASE " + dbName + ";");
+					String createSql = "CREATE DATABASE `" + dbName + "`;";
+					Orm.logger.info("Creating DATABASE: \"" + dbName + "\"");
+					Orm.logger.debug("Executing: " + createSql);
+					stmt.execute(createSql);
 				} catch (SQLException e) {
 					e.printStackTrace();
 					return false;
@@ -106,7 +108,7 @@ public class DbConnector {
 	}
 	
 	protected long executeInsert(SqlParams params) {
-		Orm.logger.debug("executingInsert: " + params.sql);
+		Orm.logger.debug("executingInsert: " + params);
 		if(!isOperatable()) {
 			return -1;
 		}
@@ -138,7 +140,7 @@ public class DbConnector {
 		if(!isOperatable()) {
 			return new ArrayList<Map<String, Object>>();
 		}
-		Orm.logger.debug("executeQuery: " + params.sql);
+		Orm.logger.debug("executeQuery: " + params);
 		List<Map<String, Object>> rsList = new ArrayList<Map<String, Object>>();
 		try(Connection conn = getConnection()) {
 			try(PreparedStatement stmt = conn.prepareStatement(params.sql)){
@@ -153,10 +155,12 @@ public class DbConnector {
 				}
 				rs.close();
 			}catch(SQLException e) {
-				e.printStackTrace();
+				Orm.logger.warn("executeQuery failed: " + params + " | Message: " + e.getMessage());
+				return rsList;
 			}
 		}catch(SQLException e) {
-			e.printStackTrace();
+			Orm.logger.warn("executeQuery failed: " + params + " | Message: " + e.getMessage());
+			return rsList;
 		}
 		return rsList;
 	}
@@ -173,19 +177,20 @@ public class DbConnector {
 		if(params == null || !isOperatable()) {
 			return false;
 		}
-		Orm.logger.debug("execute: " + params.sql);
+		Orm.logger.debug("execute: " + params);
 		try(Connection conn = getConnection()) {
 			try(PreparedStatement stmt = conn.prepareStatement(params.sql)) {
 				params.bindParams(stmt);
 				stmt.execute();
 			} catch (SQLException e) {
-				e.printStackTrace();
+				Orm.logger.warn("execute failed: " + params + " | Message: " + e.getMessage());
+				return false;
 			}
 			return true;
 		} catch (SQLException e1) {
-			e1.printStackTrace();
+			Orm.logger.warn("execute failed: " + params + " | Message: " + e1.getMessage());
+			return false;
 		}
-		return false;
 	}
 
 

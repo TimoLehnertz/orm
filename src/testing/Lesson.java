@@ -1,13 +1,14 @@
 package testing;
 
+import annotations.NotNull;
 import annotations.OneToOne;
+import annotations.SqlVarchar;
 import annotations.Table;
-import annotations.Varchar;
 import orm.Entity;
 
 @Table(name = "lesson")
 public class Lesson extends Entity<Lesson>{
-
+	
 	@OneToOne(referenceTable = Subject.class)
 	Subject subject;
 	
@@ -17,7 +18,7 @@ public class Lesson extends Entity<Lesson>{
 	@OneToOne(referenceTable = Teacher.class)
 	Teacher teacher;
 	
-	@Varchar(size = 200)
+	@SqlVarchar(size = 200)
 	String info;
 	
 	@OneToOne(referenceTable = Hour.class)

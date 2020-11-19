@@ -4,13 +4,13 @@ import java.util.List;
 
 import annotations.OneToMany;
 import annotations.Table;
-import annotations.Varchar;
+import annotations.SqlVarchar;
 import orm.Entity;
 
 @Table(name = "schoolClass")
 public class SchoolClass extends Entity<Lesson> {
 
-	@Varchar(size = 200)
+	@SqlVarchar(size = 200)
 	String name;
 
 	@OneToMany(referenceTable = Teacher.class)

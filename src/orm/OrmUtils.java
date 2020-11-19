@@ -11,14 +11,21 @@ import java.util.Map.Entry;
 
 import annotations.ManyToMany;
 import annotations.NoOrm;
+import annotations.NotNull;
 import annotations.OneToMany;
 import annotations.OneToOne;
+import annotations.SqlLontext;
+import annotations.SqlText;
+import annotations.SqlVarchar;
 import annotations.Table;
-import annotations.Varchar;
 
 
 public class OrmUtils {
 
+	protected static int state = Orm.READ_WRITE;
+	
+	protected static final String NULLPTR = null;
+	
 	/**
 	 * relations -> Map wich should be initiated at the start via Orm.initTables()
 	 * after initialization this Map should contain every table as Key and
@@ -41,15 +48,20 @@ public class OrmUtils {
 	private static DbConnector db = DbConnector.getInstance();
 	
 	/**
+	 * Simplified logging
+	 */
+	private static final Logger log = Orm.logger;
+	
+	/**
+	 * register manager for registering Entities and avoiding multiple savings of the exact same entity
+	 */
+	static RegisterManager manager = RegisterManager.getInstance();
+	
+	/**
 	 * Name of the primary key field in class Entity
 	 * This String can only be change id if the primary Key changes
 	 */
 	public static final String ENTITY_PK_FIELDNAME = "id_entity";
-	
-	/**
-	 * tabs for debugging
-	 */
-	int tabs = 0;
 	
 	/**
 	 * Method wich should be invoked first before any interactions can be made with the orm
@@ -59,12 +71,13 @@ public class OrmUtils {
 	 * @return true for success
 	 */
 	protected static boolean initTables(Class<? extends Entity<?>>[] entities) {
-		Orm.logger.notice("Initializing tables..");
+		log.info("Initializing tables..");
+		log.incrementTab();
 		if(!db.isOperatable()) {
-			Orm.logger.error("Database is not operatable! aboarding");
+			log.error("Database is not operatable! aboarding");
+			log.decrementTab();
 			return false;
 		}
-		Orm.logger.incrementTab();
 		
 		initForeignKeys(entities);
 		
@@ -72,9 +85,467 @@ public class OrmUtils {
 		
 		boolean succsess = crateTables();//crate tables
 		
-		Orm.logger.decrementTab();
-		Orm.logger.notice("Done");
+		log.decrementTab();
+		log.info("Done");
 		return succsess;
+	}
+
+	/**
+	 * This method first checks if the given Entity is valid to be saved
+	 * and if so it will be saved into the database if state is equal to READ_WRITE
+	 * @param entity to be saved
+	 * @param pointer optional pointer for reference. used when this method gets invoked by another saving entity to reference the others one to many relation
+	 * @param pointId id to point to
+	 * @return
+	 */
+	protected static long saveEntity(Entity<?> entity, FK pointer, long pointId) {
+		log.incrementTab("Saving Entity...", Logger.INFO);
+		log.info(pointer != null ? "received pointer " + pointer + " with id: " + pointId : "");
+		if(!isEntityValidForSave(entity)) {
+			log.decrementTab("Cant save Entity! Didnt pass validation checks", Logger.WARN);
+			return -1;
+		}
+		if(!entity.doesTableExists()) {
+			log.warn("You saved an entity without its Table! did you invoked Orm.initTables() before?");
+			return -1;
+		}
+		boolean isRegistered = manager.isEntityRegistered(entity);
+		if(isRegistered) {//is already in the database -> UPDATE
+			long id = updateEntity(entity);
+			if(id > -1) {
+				log.decrementTab("Done", Logger.INFO);
+			} else {
+				log.decrementTab("Could not save Entity " + entity.getClass().getSimpleName() + "! UPDATE failed", Logger.WARN);
+			}
+			return id;
+		} else {// not in the database yet -> INSERT
+			long id = insertEntity(entity, pointer, pointId);
+			if(id > -1) {
+				manager.registerEntity(entity, id);
+				log.decrementTab("Done", Logger.INFO);
+			} else {
+				log.decrementTab("Could not save Entity! SQL INSERT failed", Logger.WARN);
+			}
+			return id;
+		}
+	}
+	
+	protected static long insertEntity(Entity<?> entity, FK pointer, long pointId) {
+		log.incrementTab("inserting Entity " + getTableName(entity.getClass()) + "...", Logger.INFO);
+		long id = -1;
+		SqlParams insert = getInsertSql(entity, pointer, pointId);
+		if(insert != null) {
+			id = db.executeInsert(insert);
+			if(id >= 0) {
+				log.info("Succsessfully insertet Entity");
+				log.info("Registering Entity in registerManager");
+				manager.registerEntity(entity, id);
+				
+				boolean success = saveEntitiesManyRelations(entity);
+				log.decrementTab(success ? "Done" : "Done, but some Many Fields may not be saved", Logger.INFO);
+			} else {
+				log.decrementTab("ERROR while inserting into the database", Logger.ERROR);
+				return id;
+			}
+		} else {
+			log.decrementTab();// No message needed as getInsertSql(entity) will inform about errors
+			return id;
+		}
+		return id;
+	}
+	
+	protected static long updateEntity(Entity<?> entity) {
+		log.incrementTab("Updating Entity " + entity.getTableName() + "...", Logger.INFO);
+		SqlParams update = getUpdateSql(entity);
+		if(update != null) {
+			boolean succsess = db.execute(update);
+			if(succsess) {
+				succsess = saveEntitiesManyRelations(entity);
+				log.decrementTab(succsess ? "DONE" : "Done with failed saveEntitiesManyRelations", Logger.INFO);
+				return manager.getIdFromEntity(entity);
+			} else {
+				log.decrementTab("Could not Update Entity: error during execution in database", Logger.ERROR);
+				return -1;
+			}
+		} else {
+			log.decrementTab("Could not Update Entity: getUpdateSql() failed", Logger.ERROR);
+			return -1;
+		}
+	}
+	
+	protected static SqlParams getUpdateSql(Entity<?> entity) {
+		long id = manager.getIdFromEntity(entity);
+		log.incrementTab("Generating Update SQL for Entity(id:" + id + ") " + entity.getTableName(), Logger.INFO);
+		if(id == -1) {
+			log.decrementTab("Can not update Entity: not inserted yet", Logger.ERROR);
+			return null;
+		}
+		SqlParams update = new SqlParams("UPDATE `" + entity.getTableName() + "` ");
+		String delimiter = " SET";
+		for (Field field : getPrimitiveFields(entity)) {// primitive fields
+			field.setAccessible(true);
+			update.sql += delimiter + "`" + getColumnNameFromPrimitiveField(field) + "` = ?";
+			delimiter = ", ";
+			try {
+				update.add(field.get(entity));
+			} catch (IllegalArgumentException | IllegalAccessException e) {
+				if(field.isAnnotationPresent(NotNull.class)) {
+					log.decrementTab("Field::get Error message -> " + e.getMessage(), Logger.ERROR);
+					return null;
+				} else {
+					log.warn("Field::get Error message -> " + e.getMessage() + " | Updating with NULL instead");
+					update.add(NULLPTR);
+				}
+			}
+		}
+		update.sql += " WHERE `" + ENTITY_PK_FIELDNAME + "` = ?;";
+		update.add(id);
+		log.decrementTab("Done", Logger.INFO);
+		return update;
+	}
+	
+	/**
+	 * iterate trough existing One To Many foreign keys and save their lists
+	 * when saving the method will pass the corresponding foreign key and the own id so the saved Entities can reference the given entity
+	 * @param entity
+	 * @return succsess
+	 */
+	protected static boolean saveEntitiesManyRelations(Entity<?> entity) {
+		long id = manager.getIdFromEntity(entity);
+		log.incrementTab("Saving " + entity.getClass() + "(ID=" + id + ") Many Relations...", Logger.INFO);
+		if(id == -1) {
+			log.decrementTab("Entity is not in the database yet aboarding", Logger.WARN);
+			return false;
+		}
+		int failed = 0;
+		int succeeded = 0;
+		/**
+		 * one to many
+		 */
+		List<FK> oneToManys = getOneToManyFksPointingTo(entity);
+		log.info("found " + oneToManys.size() + " ONE_TO_MANY relations: " + oneToManys);
+		for (FK fk : oneToManys) {
+			List<Entity<?>> content = fk.getListContentFor(entity);
+			clearOneToManyList(entity, fk);// Clearing the list in the database only to add it back. @TODO better handling of deletion in lists
+			if(content == null && fk.getOwnField().isAnnotationPresent(NotNull.class)) {
+				log.decrementTab("ERROR fetching List content from Entity", Logger.WARN);
+				return false;
+			}
+			for (Entity<?> listEntity : content) {
+				if(saveEntity(listEntity, fk, id) !=id -1) {//succsess
+					succeeded++;
+				}else {//error
+					failed++;
+				}
+			}
+		}
+		/**
+		 * many to many
+		 */
+		List<LinkTable> links = getLinkTablesFrom(entity.getClass());
+		log.info("found " + links.size() + " MANY_TO_MANY relations: " + links);
+		for (LinkTable linkTable : links) {
+			log.info("handling linktable " + linkTable);
+//			clearLinkBFromLinkTable(linkTable, entity); //Deleting all list contents just to add them again @TODO better handling of deletion
+			List<Entity<?>> contentList = linkTable.getLinkAlistContent(entity);
+			if(contentList == null) {
+				if(linkTable.getLinkAReferenceField().isAnnotationPresent(NotNull.class)) {
+					log.warn("Link tbale list field was null! skipped");
+					failed++;
+				} else {
+					continue;//skip as null is valid
+				}
+			}
+			log.info("Content size: " + contentList.size());
+			for (Entity<?> content : contentList) {
+				content.save();
+				boolean succsess = db.execute(linkTable.getInsertSql(entity, content));
+				if(succsess) {
+					succeeded++;
+				} else {
+					failed++;
+				}
+			}
+		}
+		log.info(succeeded + " succseeded saves, " + failed + " failed saves from " + (succeeded + failed) + " in total");
+		log.decrementTab("Done", Logger.INFO);
+		return true;
+	}
+	
+	@Deprecated
+	private static boolean clearLinkBFromLinkTable(LinkTable link, Entity<?> linkA) {
+		log.incrementTab("clearLinkBFromLinkTable: " + link, Logger.INFO);
+		long id = manager.getIdFromEntity(linkA);
+		if(id == -1) {
+			log.decrementTab("LinkA is not in the db yet", Logger.INFO);
+			return false;
+		}
+		SqlParams  delete = new SqlParams("DELETE FROM `" + getTableName(link.getLinkB()) + "`" +
+		" WHERE " + ENTITY_PK_FIELDNAME + " NOT IN (SELECT `" + getTableName(link.getLinkB()) + "` FROM `" + link.getTableName() + "` WHERE `" + getTableName(link.getLinkA()) + "` = ?);");
+		delete.add(id);
+		log.decrementTab("Done", Logger.INFO);
+		return db.execute(delete);
+	}
+	
+	private static List<LinkTable> getLinkTablesFrom(Class<?> from){
+		List<LinkTable> out = new ArrayList<>();
+		for (LinkTable linkTable : linkTables) {
+			if(linkTable.getLinkA() == from) {
+				out.add(linkTable);
+			}
+		}
+		return out;
+	}
+	
+	private static boolean clearOneToManyList(Entity<?> one, FK fk) {
+		long id = manager.getIdFromEntity(one);
+		log.incrementTab("clearOneToManyList from " + one.getTableName() + "(id=" + id + ")...", Logger.INFO);
+		if(id == -1) {
+			log.decrementTab("Entity is no in the database yet", Logger.WARN);
+			return false;
+		}
+		String fromTable = getTableName(fk.getOwnTable());
+		SqlParams delete = new SqlParams("DELETE FROM `" + fromTable + "` WHERE " + ENTITY_PK_FIELDNAME + " = ?;");
+		delete.add(id);
+		log.decrementTab("Done", Logger.INFO);
+		return db.execute(delete);
+	}
+	
+	/**
+	 * get the SQL INSERT COMMAND as String
+	 * this method doesnt implement good error handling so isEntityValidForSave should be invoked for save usage
+	 * If a pointer is given it will be used as first field to inert to
+	 * @param entity
+	 * @param pointer optional to reference a One to Many relation
+	 * @param pointId id for fk
+	 * @return SQL INSERT or null incase of failure
+	 */
+	protected static SqlParams getInsertSql(Entity<?> entity, FK pointer, long pointId) {
+		log.incrementTab("Generating insert SQL Entity...", Logger.INFO);
+		SqlParams insert = new SqlParams("INSERT INTO " + entity.getTableName() + " (");
+		String delimiter = "";
+		if(pointer != null) {
+			insert.sql += delimiter + "`" + pointer.getColumnname() + "`";
+			insert.add(pointId);
+			delimiter = ", ";
+		}
+		insert.sql += delimiter + getInsertColumnNameString(entity) + ") VALUES (";
+		delimiter = "";
+		if(pointer != null) {
+			insert.sql += delimiter + "?";
+			delimiter = ", ";
+		}
+		for (Field field : getPrimitiveFields(entity)) {// Primitive fields
+			field.setAccessible(true);
+			try {
+				insert.add(field.get(entity));
+				insert.sql += delimiter + "?";
+				delimiter = ", ";
+			} catch (IllegalArgumentException | IllegalAccessException e) {
+				if(field.getAnnotation(NotNull.class) == null) {
+					log.warn("Reflection Error while trying to fetch fields content :( inserting NULL instead");
+					insert.sql += delimiter + "NULL";
+					delimiter = ", ";
+				} else {
+					log.decrementTab("Reflection Error while trying to fetch fields content :( aboarding", Logger.ERROR);
+					return null;
+				}
+			}
+		}
+		for (FK fk : getOneToOneFksByType(entity)) {//ONE TO ONE relations
+			Entity<?> content = fk.getEntityContentFor(entity);
+			if(content == null && fk.isNotNull()) {
+				log.decrementTab("Reflection Error while trying to fetch fields content :( aboarding", Logger.ERROR);
+				return null;
+			} else if(content == null && !fk.isNotNull()){
+				insert.sql += delimiter + "?";
+				insert.add(NULLPTR);
+				delimiter = ", ";
+			} else {
+				long referenceId = saveEntity(content, null, 0);
+				insert.sql += delimiter + "?";
+				insert.add(referenceId);
+				delimiter = ", ";
+			}
+		}
+		insert.sql += ");";
+		log.decrementTab("Done", Logger.INFO);
+		return insert;
+	}
+	
+	/**
+	 * returns the entities Column names in its table in a specific order to be user for INSERT
+	 * ORDER:
+	 * -	Primitive Fields / String Fields in the order from getDeclaredFields()
+	 * -	Foreign Key fields in the order from getDeclaredFields() (Only for OneToOne relations)
+	 * @param entity
+	 * @return
+	 */
+	protected static String getInsertColumnNameString(Entity<?> entity) {
+		String out = "";
+		String delimiter = "";
+		for (Field field : getPrimitiveFields(entity)) {//Primitive Fields
+			out += delimiter + "`" + getColumnNameFromPrimitiveField(field) + "`";
+			delimiter = ", ";
+		}
+		for (FK fk : getOneToOneFksByType(entity)) {// ONE TO ONE FOREIGN KEYS
+			out += delimiter + "`" + fk.getColumnname() + "`";
+			delimiter = ", ";
+		}
+		return out;
+	}
+	
+	/**
+	 * Get all fields of an Entity which are no Annotated with @NoOrm and belong to the List of Supported Types
+	 * 
+	 * returned List is kept in the order, that getDeclaredFields provides(important for SQL INSERT)
+	 * 
+	 * @param entity
+	 * @return List of Fields
+	 */
+	protected static List<Field> getPrimitiveFields(Entity<?> entity){
+		List<Field> out = new ArrayList<>();
+		for (Field field : entity.getClass().getDeclaredFields()) {
+			if(isFieldNoOrm(field)) {
+				continue;//Skip NoOrm Fields
+			}
+			if(SupportedTypes.isTypeSupported(field.getType())) {
+				out.add(field);
+			}
+		}
+		return out;
+	}
+	
+	/**
+	 * search ONE to one fkRelations for
+	 * @param entity to search for
+	 * @return List of matching foreign keys
+	 */
+	protected static List<FK> getOneToOneFksByType(Entity<?> entity){
+		List<FK> out = new ArrayList<>();
+		for (FK fk : fkRelations.get(entity.getClass())) {
+			if(fk.getType() == FK.ONE_TO_ONE) {
+				out.add(fk);
+			}
+		}
+		return out;
+	}
+	
+	/**
+	 * search through all existing fks with type one to many and returm a list of all pointing to reference
+	 * @param reference
+	 * @return List of FKs
+	 */
+	protected static List<FK> getOneToManyFksPointingTo(Entity<?> reference){
+		List<FK> out = new ArrayList<>();
+		for (Entry<Class<?>, List<FK>> entry : fkRelations.entrySet()) {
+			for (FK fk : entry.getValue()) {//iterating trough all fks
+				if(fk.getType() == FK.ONE_TO_MANY && fk.getReferenceTable() == reference.getClass()) {
+					out.add(fk);
+				}
+			}
+		}
+		return out;
+	}
+	
+	/**
+	 * get The Column Name representation of a Field
+	 * Not useful yet but may be useful when this behaivior is meant to change in the future#
+	 * @param f Field
+	 * @return String name
+	 */
+	protected static String getColumnNameFromPrimitiveField(Field f) {
+		return f.getName();
+	}
+
+	/**
+	 * Checks if aan Entity is valid for saving
+	 * Does not check for correct use of Annotations -> expects Annotaions to be used correctly.
+	 * May lead to unexpected behaivior if annotations are used incorrect
+	 * Does stop checking the entity if one bad value is found
+	 * -	Checks if all @NotNull annotated Fields are infact not null
+	 * -	Checks if all @SqlVarchar annotated Fields dont exeed their length
+	 * -	Checks if all @SqlText annotated Fields dont exeed their length
+	 * -	Checks if all @SSqlLongText annotated Fields dont exeed their length
+	 * @param e Entity to be checked
+	 * @return is Entity valid
+	 */
+	protected static boolean isEntityValidForSave(Entity<?> e) {
+		log.disable();
+		log.incrementTab("Checking if " + e.getClass() + " is valid for save...", Logger.DEBUG);
+		for (Field field : e.getClass().getDeclaredFields()) {
+			field.setAccessible(true);
+			Object content;
+			try {
+				content = field.get(e);	
+			} catch (IllegalArgumentException | IllegalAccessException e1) {
+				log.decrementTab("Done! " + e.getClass() + " is NOT VALID! reason -> " + e1.getMessage(), Logger.WARN);
+				return false;
+			}
+			SqlVarchar varchar = field.getAnnotation(SqlVarchar.class);
+			SqlText text = field.getAnnotation(SqlText.class);
+			SqlLontext longText = field.getAnnotation(SqlLontext.class);
+			NotNull nn = field.getAnnotation(NotNull.class);
+			if(nn != null) {
+				if(content == null) {
+					log.decrementTab("Done! " + e.getClass() + " is NOT VALID! reason -> Field " + field + " is notated @NotNull but was null", Logger.WARN);
+					return false;
+				}
+			}
+			if(content instanceof String && content != null) { //Skipping null content as null is perfectly valid at this position
+				int length = ((String) content).length();
+				if(varchar != null) {
+					if(length > varchar.size()) {
+						log.decrementTab("Done! " + e.getClass() + " is NOT VALID! reason -> Field " + field + " of Type String exxeeds the maximum varchar size of " + varchar.size() + " chars. You can modify the lenth via Annotation", Logger.WARN);
+						return false;
+					}
+				} else if(text != null) {
+					if(length > SupportedTypes.MAX_TEXT_SIZE) {
+						log.decrementTab("Done! " + e.getClass() + " is NOT VALID! reason -> Field " + field + " of Type String exxeeds the maximum varchar size of " + SupportedTypes.MAX_TEXT_SIZE + " chars", Logger.WARN);
+						return false;
+					}
+				} else if(longText != null) {
+					if(length > SupportedTypes.MAX_LONGTEXT_SIZE) {
+						log.decrementTab("Done! " + e.getClass() + " is NOT VALID! reason -> Field " + field + " of Type String exxeeds the maximum varchar size of " + SupportedTypes.MAX_LONGTEXT_SIZE + " chars", Logger.WARN);
+						return false;
+					}
+				} else if(length > SupportedTypes.MAX_TEXT_SIZE){
+					log.decrementTab("Done! " + e.getClass() + " is NOT VALID! reason -> Field " + field + " of Type String exxeeds the maximum varchar size of " + SupportedTypes.MAX_TEXT_SIZE + " chars", Logger.WARN);
+					return false;
+				}
+			}
+			if(content != null) {
+				if(isValidListField(field)) {//List field
+					if(content instanceof List<?>) {
+						@SuppressWarnings("unchecked")//should not happen might be good to fix @ToDo
+						List<? extends Entity<?>> contentList = (List<? extends Entity<?>>) content;
+						for (Entity<?> entity : contentList) {
+							if(!isEntityValidForSave(entity)) {
+								log.decrementTab("Done! " + e.getClass() + " is NOT VALID! reason -> Entity " + entity + " from List Field " + field + " is not valid", Logger.WARN);
+								return false;
+							}
+						}
+					} else {
+						log.decrementTab("Done! " + e.getClass() + " is NOT VALID! reason -> Field " + field + " class casting error :(", Logger.WARN);
+						return false;
+					}
+				} else if(isOrmFieldvalid(field, false)){// as no list, sub type
+					if(content instanceof Entity<?>) {
+						Entity<?> entity = (Entity<?>) content;
+						if(!isEntityValidForSave(entity)) {
+							log.decrementTab("Done! " + e.getClass() + " is NOT VALID! reason -> Entity " + entity + " from List Field " + field + " is not valid", Logger.WARN);
+							return false;
+						}
+					} else {
+						log.decrementTab("Done! " + e.getClass() + " is NOT VALID! reason -> Field " + field + " class casting error :(", Logger.WARN);
+						return false;
+					}
+				}
+			}
+		}
+		log.decrementTab("Done! " + e.getClass() + " is valid for save :)", Logger.DEBUG);
+		log.enable();
+		return true;
 	}
 
 	/**
@@ -82,14 +553,16 @@ public class OrmUtils {
 	 * searches for dependencies betwween Tables and saves them into relations
 	 * @param entities Pool
 	 */
-	protected static void initForeignKeys(Class<? extends Entity<?>>[] entities) {
-		Orm.logger.notice("Initializing table-dependencies..");
-		Orm.logger.incrementTab();
-		for (Class<? extends Entity<?>> type : entities) {
+	protected static void initForeignKeys(Class<?>[] entities) {
+		log.info("Initializing table-dependencies..");
+		log.incrementTab();
+		for (Class<?> type : entities) {
 			if(!isOrmTypeValid(type, true)) {
 				continue;
 			} else {
-				fkRelations.put(type, new ArrayList<FK>());
+				if(!fkRelations.containsKey(type)) {
+					fkRelations.put(type, new ArrayList<FK>());
+				}
 				for (Field field : type.getDeclaredFields()) {
 					
 					warnOrmField(field);//look for suspicius use of annotations and warn the user
@@ -106,11 +579,12 @@ public class OrmUtils {
 					OneToMany otm = field.getAnnotation(OneToMany.class);
 					ManyToMany m2m = field.getAnnotation(ManyToMany.class);
 					if(otm != null && oto == null && m2m == null) {
+						log.debug("Initiating One To many relation from \"" + field + "\" To \"" + otm.referenceTable() + "\"");
 						Class<? extends Entity<?>> relationtable = otm.referenceTable();
 						if(!fkRelations.containsKey(relationtable)) {// No table registered yet
 							fkRelations.put(relationtable, new ArrayList<FK>());//register table
 						}
-						fkRelations.get(relationtable).add(new FK(type, field.getName()));//add dependency for "many" table to own table
+						fkRelations.get(relationtable).add(new FK(relationtable, type, field, ENTITY_PK_FIELDNAME, FK.ONE_TO_MANY));//add dependency for "many" table to own table
 					}
 					/**
 					 * One To One
@@ -119,20 +593,20 @@ public class OrmUtils {
 					 */
 					if(oto != null && otm == null) {
 						Class<? extends Entity<?>> relationtable = oto.referenceTable();
-						fkRelations.get(type).add(new FK(relationtable, ENTITY_PK_FIELDNAME));
+						fkRelations.get(type).add(new FK(type, relationtable, field, ENTITY_PK_FIELDNAME, FK.ONE_TO_ONE));
 					}
 					
 					if(m2m != null && oto == null && otm == null) {
-						Orm.logger.notice("Initiated link table from: " + type + "." + field.getName() + " to table " + getTableName(m2m.referenceTable()));
+						log.info("Initiated link table from: " + type + "." + field.getName() + " to table " + getTableName(m2m.referenceTable()));
 						final LinkTable link = new LinkTable(type, m2m.referenceTable(), field);
 						linkTables.add(link);
 					}
 				}
 			}
 		}
-		Orm.logger.notice("Dependencies: " + fkRelations);
-		Orm.logger.decrementTab();
-		Orm.logger.notice("Done!");
+		log.info("Dependencies: " + fkRelations);
+		log.decrementTab();
+		log.info("Done!");
 	}
 	
 	/**
@@ -144,8 +618,8 @@ public class OrmUtils {
 	 * @return the order needed to create tables and their foreign keys
 	 */
 	private static void sortRelations(){
-		Orm.logger.notice("Sorting creation Order..");
-		Orm.logger.incrementTab();
+		log.info("Sorting creation Order..");
+		log.incrementTab();
 		Map<Class<?>, List<FK>> pseudoCreated = new LinkedHashMap<>();//List of pseudo created Classes
 		int done = fkRelations.size();
 		for (int i = 0; i < fkRelations.size(); i++) {
@@ -171,13 +645,13 @@ public class OrmUtils {
 			}
 		}
 		if(done == fkRelations.size()) {//no sucsess
-			Orm.logger.warn("Could not define Creation order of tables! Do you have loops in your logic?");
+			log.warn("Could not define Creation order of tables! Do you have loops in your table scheme?");
 		} else { // succsess
-			Orm.logger.notice("Created creation order in " + done + " / " + fkRelations.size() + " iterations :)");
-			Orm.logger.notice("order: " + pseudoCreated);
+			log.info("Created creation order in " + done + " / " + fkRelations.size() + " iterations :)");
+			log.info("order: " + pseudoCreated);
 		}
-		Orm.logger.decrementTab();
-		Orm.logger.notice("Done!");
+		log.decrementTab();
+		log.info("Done!");
 		fkRelations = pseudoCreated;//applying sort
 	}
 	
@@ -187,8 +661,8 @@ public class OrmUtils {
 	 * @return succsess
 	 */
 	private static boolean crateTables() {
-		Orm.logger.notice("Creating tables...");
-		Orm.logger.incrementTab();
+		log.info("Creating tables...");
+		log.incrementTab();
 		int skipped = 0;
 		for (Entry<Class<?>, List<FK>> entry : fkRelations.entrySet()) {
 			if(!createTable(entry.getKey(), entry.getValue())) {
@@ -196,14 +670,12 @@ public class OrmUtils {
 			}
 		}
 		if(skipped > 0) {
-			Orm.logger.notice("->" + skipped + " Tables skipped");
+			log.info(skipped + " Tables skipped");
 		}
-		
 		createLinkTables();
-		
-		Orm.logger.decrementTab();
-		Orm.logger.notice("Done!");
-		return false;
+		log.decrementTab();
+		log.info("Done!");
+		return true;
 	}
 	
 	/**
@@ -211,100 +683,74 @@ public class OrmUtils {
 	 * @return
 	 */
 	private static boolean createLinkTables() {
-		Orm.logger.notice("Creating link tables");
-		Orm.logger.incrementTab();
+		log.info("Creating link tables");
+		log.incrementTab();
 		boolean succsess = true;
 		for (LinkTable linkTable : linkTables) {
 			if(!linkTable.isCreated()) {
-				Orm.logger.notice("Creating Link table \"" + linkTable.getTableName() + "\"");
-				Orm.logger.debug(linkTable.getCreateSql());
-				boolean tmp = db.execute(linkTable.getCreateSql());
+				log.info("Creating Link table \"" + linkTable.getTableName() + "\"");
+				log.debug(linkTable.getCreateSql());
+				boolean tmp = true;
+				if(state == Orm.READ_WRITE) {
+					db.execute(linkTable.getCreateSql());
+				} else {
+					log.info("Skipped creation of Link table due to READ_ONLY");
+				}
 				if(!tmp) {
-					Orm.logger.warn("Failed creating Link table \"" + linkTable.getTableName() + "\"");
+					log.warn("Failed creating Link table \"" + linkTable.getTableName() + "\"");
 				}
 				succsess &= tmp;
 			} else {
-				Orm.logger.debug("Skipped " +  linkTable.getTableName() + "(Already exists)");
+				log.debug("Skipped " +  linkTable.getTableName() + "(Already exists)");
 			}
 		}
-		Orm.logger.decrementTab();
-		Orm.logger.notice("Done");
+		log.decrementTab();
+		log.info("Done");
 		return succsess;
 	}
 	
 	private static boolean createTable(Class<?> type, List<FK> foreignKeys) {
-		if(!isOrmTypeValid(type, false) || DbConnector.getInstance().doesTableExist(getTableName(type))) {
+		if(!isOrmTypeValid(type, false) || db.doesTableExist(getTableName(type))) {
 			return false;
 		}
 		Table table = type.getAnnotation(Table.class);
 		if(table == null) {
 			return false;
 		}
-		SqlParams createParam = new SqlParams("CREATE TABLE " + table.name() + "(" + getSqlFieldDeclaraionString(type, foreignKeys) + ")");
+		SqlParams createParam = new SqlParams("CREATE TABLE `" + table.name() + "`(" + getSqlFieldDeclaraionString(type, foreignKeys) + ")");
 		createParam.sql += "CHARACTER SET = " + table.charset();
-		createParam.sql += " ENGINE =  " + table.engine();
-		createParam.sql += ";";
-//		return db.execute(createParam);
-		return false;
+		createParam.sql += " ENGINE =  " + table.engine() + ";";
+		if(state == Orm.READ_WRITE) {
+			return db.execute(createParam);
+		} else {
+			log.info("Skipped creation of table due to READ_ONLY");
+			return true;
+		}
 	}
 	
 	private static String getSqlFieldDeclaraionString(Class<?> type, List<FK> foreignKeys) {
-		String out = ENTITY_PK_FIELDNAME + " INT PRIMARY KEY";
-		for (FK fk : foreignKeys) {
-			out += getTableName(fk.getReferenceTable()) + " INT";
+		String out = "`" + ENTITY_PK_FIELDNAME + "` INT PRIMARY KEY AUTO_INCREMENT";
+		for (Field field : type.getDeclaredFields()) {
+			if(isFieldNoOrm(field) || doesFieldHasRelations(field)) {
+				continue;//skip @NoOrm and relational Fields for now
+			} else
+//			Primitive Fields
+			if(SupportedTypes.isTypeSupported(field.getType())) {
+				out += ", `" + getColumnNameFromPrimitiveField(field) + "` " + SupportedTypes.javaFieldToMysqlType(field);
+			}
+		}
+		for (FK fk : foreignKeys) {//foreign Key fields
+			out += ", " + fk.getCreateSql();
 		}
 		return out;
 	}
 	
-	/**
-	 * Get the primary key field which is declare in entity
-	 * @return
-	 */
-	private static Field getPrimaryKeyField(){
-		try {
-			return Entity.class.getDeclaredField(ENTITY_PK_FIELDNAME);
-		} catch (NoSuchFieldException | SecurityException e) {
-			Orm.logger.error("Primary key in ENTITY changed please change its name back to \"" + ENTITY_PK_FIELDNAME + "\"");
-			e.printStackTrace();
-			return null;
-		}
+	private static boolean doesFieldHasRelations(Field field) {
+		OneToOne oto = field.getAnnotation(OneToOne.class);
+		OneToMany otm = field.getAnnotation(OneToMany.class);
+		ManyToMany m2m = field.getAnnotation(ManyToMany.class);
+		return oto != null || otm != null || m2m != null;
 	}
-	
-//	private static Field getForeignKeyReferenceField(Field fkField, ForeignKey fk, boolean superClass) {
-//		Field reference = null;
-//		try {
-//			if(superClass) {
-//				reference = fk.referenceTable().getSuperclass().getDeclaredField(fk.field());
-//			} else {
-//				reference = fk.referenceTable().getDeclaredField(fk.field());
-//			}
-//			if(SupportedTypes.isTypeValidForkey(reference.getType())) {
-//				if(fkField.getType() == reference.getType()) {
-//					if(reference.getAnnotation(PrimaryKey.class) == null) {
-//						Orm.logger.warn("The Foreign key at \"" + fk.referenceTable() + "\", \"" + fk.field() + "\" is pointing to a non Primary key Field");
-//					}
-//					return reference;
-//				} else {
-//					Orm.logger.warn("Foreign And referenced Primary keys have different types! ON: \"" + fk.referenceTable() + "\", \"" + fk.field() + "\"");
-//				}
-//			} else {
-//				Orm.logger.warn("Foreign Key has a wrong type! Only numeric foreign Keys are supported. ON: \"" + fk.referenceTable() + "\", \"" + fk.field() + "\"");
-//			}
-//		} catch (NoSuchFieldException | SecurityException e) {
-//			if(!superClass) {
-//				reference = getForeignKeyReferenceField(fkField, fk, true);
-//				if(reference == null) {
-//					Orm.logger.warn("Foreign Key is incorrectly formed given: \"" + fk.referenceTable() + "\", \"" + fk.field() + "\", message: " + e.getMessage());
-//				} else {
-//					if(reference.getAnnotation(PrimaryKey.class) == null) {
-//						Orm.logger.warn("The Foreign key at \"" + fk.referenceTable() + "\", \"" + fk.field() + "\" is pointing to a non Primary key");
-//					}
-//					return reference;
-//				}
-//			}
-//		}
-//		return null;
-//	}
 	
 	/**
 	 * Checks wether a class type extends Entity but is not an entity itself
@@ -346,7 +792,8 @@ public class OrmUtils {
 	}
 	
 	/**
-	 * Checks if a Field is valid for use in orm
+	 * Checks if a Field of type List<? extends Entity> or ? extends Entity is valid for use in orm
+	 * returns false for primitive / String fields
 	 * only checks types and annotations
 	 * doesnt look for potentially missing dependencies
 	 * 
@@ -365,22 +812,29 @@ public class OrmUtils {
 		return false;//no matches
 	}
 	
+	protected static boolean isValidListField(Field field) {
+		if(isListClass(field.getType())){
+			return isOrmTypeValid(getGenericClassFromListField(field), false);
+		}
+		return false;
+	}
+	
 	/**
 	 * Checks if a Class type is compatible with Orm 
 	 * @param type
 	 * @param log
 	 * @return
 	 */
-	protected static boolean isOrmTypeValid(Class<?> type, boolean log) {
+	protected static boolean isOrmTypeValid(Class<?> type, boolean logging) {
 		if(!isTypeSubTypeFromEntity(type)) {
-			if(log) {
-				Orm.logger.warn("Class \"" + type + "\"! is no subclass from Entity");
+			if(logging) {
+				log.warn("Class \"" + type + "\"! is no subclass from Entity");
 			}
 			return false;
 		}
 		Table table = type.getAnnotation(Table.class);
-		if(table == null && log) {
-			Orm.logger.warn("You did not provide a Table Anotation for class \"" + type + "\"! Please do so by adding @Table(name = \"<tableName>\"");
+		if(table == null && logging) {
+			log.warn("You did not provide a Table Anotation for class \"" + type + "\"! Please do so by adding @Table(name = \"<tableName>\"");
 		}
 		return table != null;
 	}
@@ -394,34 +848,59 @@ public class OrmUtils {
 		if(isFieldNoOrm(field)) {
 			return;
 		}
+		SqlVarchar varchar = field.getAnnotation(SqlVarchar.class);
+		SqlText text = field.getAnnotation(SqlText.class);
+		SqlLontext longText = field.getAnnotation(SqlLontext.class);
 		OneToOne oneToOne = field.getAnnotation(OneToOne.class);
 		OneToMany oneToMany = field.getAnnotation(OneToMany.class);
 		ManyToMany manyToMany = field.getAnnotation(ManyToMany.class);
+		if(field.getType() != String.class) {
+			if(varchar != null || text != null || longText != null) {
+				log.warn("Field \"" + field + "\" is not compatible with Annotations for String Fields");
+			}
+		}
 		if(isTypeSubTypeFromEntity(field.getType())){//subtype
 			if(manyToMany != null) {
-				Orm.logger.warn("Field \"" + field + "\" not compatible with Annotation ManyToMany");
+				log.warn("Field \"" + field + "\" not compatible with Annotation ManyToMany");
 			} if(oneToMany != null) {
-				Orm.logger.warn("Field \"" + field + "\" not compatible with Annotation OneToMany");
+				log.warn("Field \"" + field + "\" not compatible with Annotation OneToMany");
 			}else if(oneToOne == null) {
-				Orm.logger.warn("Field \"" + field + "\" is compatible but No Annotation was found SKIPPED | Add @NoOrm to surpress this warning");
+				log.warn("Field \"" + field + "\" is compatible but No Annotation was found SKIPPED | Add @NoOrm to surpress this warning");
 			}
 		} else if(isListClass(field.getType())) {//list Field
 			if(isOrmTypeValid(getGenericClassFromListField(field), false)) {
 				if(oneToOne != null) {
-					Orm.logger.warn("Field \"" + field + "\" not compatible with Annotation OneToOne");
+					log.warn("Field \"" + field + "\" not compatible with Annotation OneToOne");
 				} else if(manyToMany == null && oneToMany == null) {
-					Orm.logger.warn("List Field \"" + field + "\" is compatible but No Annotation was found SKIPPED add @NoOrm to surpress this warning");
+					log.warn("List Field \"" + field + "\" is compatible but No Annotation was found SKIPPED add @NoOrm to surpress this warning");
 				} else if(manyToMany != null && oneToMany != null){
-					Orm.logger.warn("List Field \"" + field + "\" is compatible not compatible with manyToMany AND oneToMany");
+					log.warn("List Field \"" + field + "\" is compatible not compatible with manyToMany AND oneToMany");
 				}
 			}
 		} else if(SupportedTypes.isTypeSupported(field.getType())) {//"primitive" Field
-			Varchar varchar = field.getAnnotation(Varchar.class);
+			if(oneToOne != null || oneToMany != null || manyToMany != null) {
+				log.warn("Field \"" + field + "\" is not compatible width relation Annotations");
+			}
+			if(varchar != null && text != null) {
+				log.warn("Field \"" + field + "\" is not compatible width both @SqlVarchar and @SqlText choose one of them");
+			}
 			if(varchar != null) {
-				if(field.getType() != String.class) {
-					Orm.logger.warn("List Field \"" + field + "\" is compatible width @Varchar use varchar for String fields");
+				if(varchar.size() < 1) {
+					log.warn("Field \"" + field + "\" has varchar smaller 1! one will be used instead");
 				}
 			}
+			if(varchar != null || text != null || longText != null) {
+				if(field.getType() != String.class) {
+					log.warn("Field \"" + field + "\" is not compatible width @SqlVarchar / @SqlText / @SqlLongText use them for String fields only");
+				}
+			}
+			if(field.getType() == String.class) {
+				if(varchar == null && text == null && longText == null) {
+					log.warn("Field \"" + field + "\" of type String is not Anotated SqlType text will be choosen. Annotate the field with @SqlText / @SqlText or @NoOrm to surpress this warning");
+				}
+			}
+		} else {
+			log.warn("Field \"" + field + "\" is not supported :( use @NoOrm to surpress this warning or ask for support :)");
 		}
 	}
 	
@@ -442,7 +921,7 @@ public class OrmUtils {
 	protected static String getTableName(Class<?> type) {
 		Table table = type.getAnnotation(Table.class);
 		if(table == null) {
-			Orm.logger.warn("You did not provide a Table Anotation for class \"" + type + "\"! Please do so by adding @Table(name = \"<tableName>\"");
+			log.warn("You did not provide a Table Anotation for class \"" + type + "\"! Please do so by adding @Table(name = \"<tableName>\"");
 			return null;
 		}
 		return table.name();
@@ -487,14 +966,22 @@ public class OrmUtils {
 	
 	/**
 	 * @param n
+	 * @return n times the string glued together to one
+	 */
+	public static String getNStrings(String s, int n) {
+		String out = "";
+		for (int i = 0; i < n; i++) {
+			out += s;
+		}
+		return out;
+	}
+	
+	/**
+	 * @param n
 	 * @return n tabs as String
 	 */
 	public static String getnTabs(int n) {
-		String out = "";
-		for (int i = 0; i < n; i++) {
-			out += "\t";
-		}
-		return out;
+		return getNStrings("\t", n);
 	}
 	
 	/**

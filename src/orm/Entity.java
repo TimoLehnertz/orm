@@ -1,10 +1,10 @@
 package orm;
 
-import annotations.AutoIncrement;
+import annotations.Table;
 
 /**
  * Class for easy access to Orm features
- * Meant to be extended by any class to gain AutoDb features
+ * Meant to be extended by any class to gain Orm features
  * 
  * @author Timo Lehnertz
  *
@@ -12,39 +12,38 @@ import annotations.AutoIncrement;
 
 public class Entity<T extends Entity<?>> {
 	
-	@AutoIncrement
-	protected long id_entity;
-	
 	/**
-	 * Saves/updates this instance and all its content to the database
-	 * @return
+	 * Checks if this entity is valid and save to be saved to the database
+	 * logggs all results and reasonds why it isnt valid to the logger.
+	 * Use at least Loggger.WARN loglevel to see why an Entity might not be valid
+	 * @return am I valid?
 	 */
-//	public long save() {
-		
-//		return OrmLogic.save(this);
-//	}
-	
-	/**
-	 * Deletes this object and its contents from the database
-	 * @return true if succsessful
-	 */
-//	public boolean delete() {
-//		return OrmLogic.delete(this);
-//	}
-	
-	/**
-	 * @return List of all Entity instances ever beeing saved to the database
-	 */
-//	public List<T> getAll() {
-//		return (List<T>) OrmLogic.getAllFromType(this.getClass(), null);
-//	}
-	
-	/**
-	 * Overriden to String functionality to easier see relations between objects and its content
-	 */
-	
-	@Override
-	public String toString() {
-		return OrmUtils.stringifyObject(this);
+	public boolean isValid() {
+		return Orm.isEntityValidForSafe(this);
 	}
+	
+	public boolean save() {
+		return Orm.save(this) >= 0;
+	}
+	
+	public boolean doesTableExists() {
+		return DbConnector.getInstance().doesTableExist(getTableName());
+	}
+	
+	public String getTableName() {
+		Table table = getClass().getAnnotation(Table.class);
+		if(table == null) {
+			Orm.logger.warn("You did not provide a Table Anotation for class \"" + getClass() + "\"! Please do so by adding @Table(name = \"<tableName>\"");
+			return null;
+		}
+		return table.name();
+	}
+	
+	/**
+	 * JSon like to String
+	 */
+//	@Override
+//	public String toString() {
+//		return OrmUtils.stringifyObject(this);
+//	}
 }

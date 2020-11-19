@@ -12,7 +12,7 @@ import orm.Entity;
 public class Timetable extends Entity<Lesson> {
 
 	@OneToMany(referenceTable = Day.class)
-	List<Day> tage;
+	List<Day> days;
 	
 	@OneToOne(referenceTable = SchoolClass.class)
 	SchoolClass schoolClass;
@@ -22,9 +22,9 @@ public class Timetable extends Entity<Lesson> {
 		super();
 	}
 
-	public Timetable(List<Day> tage, SchoolClass schoolClass, Date date) {
+	public Timetable(List<Day> days, SchoolClass schoolClass, Date date) {
 		super();
-		this.tage = tage;
+		this.days = days;
 		this.schoolClass = schoolClass;
 		this.date = date;
 	}

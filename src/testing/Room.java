@@ -1,13 +1,13 @@
 package testing;
 
 import annotations.Table;
-import annotations.Varchar;
+import annotations.SqlVarchar;
 import orm.Entity;
 
 @Table(name = "room")
 public class Room extends Entity<Lesson> {
 
-	@Varchar(size = 50)
+	@SqlVarchar(size = 50)
 	String name;
 	int size;
 	boolean computerRoom;

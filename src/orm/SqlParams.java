@@ -40,11 +40,17 @@ public class SqlParams {
 	
 	public boolean add(Object ... o) {
 		for (Object object : o) {
-			if(!SupportedTypes.isTypeSupported(object.getClass())) {
+			if(object == null) {
+				Orm.logger.debug("SqlParams::add -> adding null");
+				argTypes += SupportedTypes.getCharRepresentationOftype(null);
+				data.add(null);
+			} else if(!SupportedTypes.isTypeSupported(object.getClass())) {
+				Orm.logger.debug("SqlParams::add -> skipping " + object.getClass() + "(not supported)");
 				continue;
+			} else{
+				argTypes += SupportedTypes.getCharRepresentationOftype(object.getClass());
+				data.add(object);
 			}
-			argTypes += SupportedTypes.getCharRepresentationOftype(object.getClass());
-			data.add(object);
 		}
 		return true;
 	}
@@ -82,5 +88,10 @@ public class SqlParams {
 			}
 		}
 		return stmt;
+	}
+	
+	@Override
+	public String toString() {
+		return "SQL: " + sql + " | Data: " + data;
 	}
 }

@@ -5,6 +5,12 @@ import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.List;
 
+import annotations.NotNull;
+import annotations.SqlLontext;
+import annotations.SqlText;
+import annotations.SqlVarchar;
+import annotations.Unique;
+
 
 /**
  * Class for parsing of types between Java and Mysql
@@ -14,6 +20,9 @@ import java.util.List;
 
 public class SupportedTypes {
 
+	protected static final int MAX_TEXT_SIZE = 65535;
+	protected static final long MAX_LONGTEXT_SIZE = 4294967295l;
+	
 	private static final List<Class<?>> supportedTypes = Arrays.asList(Boolean.TYPE, Boolean.class, Byte.TYPE, Byte.class, Short.TYPE, Short.class, Integer.TYPE,
 			Integer.class, Long.TYPE, Long.class, Float.TYPE, Float.class, Double.class, Double.TYPE, Double.class, Double.TYPE,
 			Double.class, java.math.BigDecimal.class, java.math.BigInteger.class, java.util.Date.class, java.sql.Date.class, java.sql.Time.class,
@@ -57,8 +66,14 @@ public class SupportedTypes {
 		return supportedKeyTypes.contains(type);
 	}
 	
-	protected static String javaTypeToMysqlType(Class<?> c) {
+	protected static String javaFieldToMysqlType(Field field) {
 		String out = "";
+		Class<?> c = field.getType();
+		SqlVarchar varchar = field.getAnnotation(SqlVarchar.class);
+		SqlText text = field.getAnnotation(SqlText.class);
+		SqlLontext  longText = field.getAnnotation(SqlLontext.class); 
+		NotNull nn = field.getAnnotation(NotNull.class);
+		Unique unique = field.getAnnotation(Unique.class);
 		/**
 		 * Numeric
 		 */
@@ -110,12 +125,32 @@ public class SupportedTypes {
 		 * Variable-width types
 		 */
 		if(c == String.class) {
-			out = "TEXT";
+			if(varchar != null && text == null && longText == null) {
+				out += "VARCHAR(" + Math.max(varchar.size(), 1) + ")";
+			} else if(text != null && varchar == null && longText == null) {
+				out = "TEXT";
+			} else if(longText != null && text == null && varchar == null){
+				out = "LONGTEXT";
+			} else {
+				out = "TEXT";
+			}
 		}
-		return out + "";
+		if(nn != null) {
+			out += " NOT NULL";
+		}
+		if(unique != null) {
+			out += " UNIQUE";
+		}
+		return out;
 	}
 	
 	public static char getCharRepresentationOftype(Class<?> c) throws IllegalArgumentException {
+		/**
+		 * Null
+		 */
+		if(c == null) {
+			return STRING; // placeholder for null value
+		}
 		/**
 		 * Numeric
 		 */
