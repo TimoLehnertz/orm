@@ -31,9 +31,10 @@ public class FK {
 	private boolean notNull = false;
 	private boolean unique = false;
 	
+	boolean cascade;
 	int type;
 	
-	public FK(Class<?> ownTable, Class<?> referenceTable,  Field ownField, String referenceColumn, int type) {
+	public FK(Class<?> ownTable, Class<?> referenceTable,  Field ownField, String referenceColumn, int type, boolean cascade) {
 		super();
 		this.referenceTable = referenceTable;
 		this.ownTable = ownTable;
@@ -43,7 +44,7 @@ public class FK {
 		ownField.setAccessible(true);
 	}
 	
-	public FK(Class<?> ownTable, Class<?> referenceTable, Field ownField, String referenceColumn, int type, boolean notNull, boolean unique) {
+	public FK(Class<?> ownTable, Class<?> referenceTable, Field ownField, String referenceColumn, int type, boolean notNull, boolean cascade, boolean unique) {
 		super();
 		this.referenceTable = referenceTable;
 		this.ownTable = ownTable;
@@ -57,8 +58,10 @@ public class FK {
 	
 	public String getCreateSql() {
 		String out = "`" + getColumnname() + "` INT" + (notNull ? " NOT NULL" : "") + (unique ? "UNIQUE" : "");//declaration
-		
 		out += ", FOREIGN KEY(`" + getColumnname() + "`) REFERENCES `" + OrmUtils.getTableName(referenceTable) + "`(`" + referenceColumn + "`)";//reference
+		if(cascade) {
+			out += " ON DELETE CASCADE ON UPDATE CASCADE";
+		}
 		return out;
 	}
 	
@@ -111,6 +114,10 @@ public class FK {
 		}
 	}
 	
+	public boolean isCascade() {
+		return cascade;
+	}
+
 	public String getColumnname() {
 		return OrmUtils.getTableName(referenceTable) + "_" + referenceColumn;
 	}

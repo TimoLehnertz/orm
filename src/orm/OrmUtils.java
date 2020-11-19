@@ -173,6 +173,14 @@ public class OrmUtils {
 		}
 	}
 	
+	/**
+	 * Gererates the update sql for the given entity
+	 * 
+	 * Only updates the entities primitive / String fields!
+	 * 
+	 * @param entity
+	 * @return SQL
+	 */
 	protected static SqlParams getUpdateSql(Entity<?> entity) {
 		long id = manager.getIdFromEntity(entity);
 		log.incrementTab("Generating Update SQL for Entity(id:" + id + ") " + entity.getTableName(), Logger.INFO);
@@ -207,6 +215,9 @@ public class OrmUtils {
 	/**
 	 * iterate trough existing One To Many foreign keys and save their lists
 	 * when saving the method will pass the corresponding foreign key and the own id so the saved Entities can reference the given entity
+	 * 
+	 * @ToDo
+	 * 
 	 * @param entity
 	 * @return succsess
 	 */
@@ -226,8 +237,7 @@ public class OrmUtils {
 		log.info("found " + oneToManys.size() + " ONE_TO_MANY relations: " + oneToManys);
 		for (FK fk : oneToManys) {
 			List<Entity<?>> content = fk.getListContentFor(entity);
-			clearOneToManyList(entity, fk);// Clearing the list in the database only to add it back. @TODO better handling of deletion in lists
-			if(content == null && fk.getOwnField().isAnnotationPresent(NotNull.class)) {
+			if(content == null && fk.getOwnField().isAnnotationPresent(NotNull.class)) {// is null and NotNullAnotated
 				log.decrementTab("ERROR fetching List content from Entity", Logger.WARN);
 				return false;
 			}
@@ -272,6 +282,20 @@ public class OrmUtils {
 		return true;
 	}
 	
+	/**
+	 * check if a tyble has been initiated for this type
+	 * @param type
+	 * @return
+	 */
+	protected static boolean isIitiated(Class<?> type){
+		for (Entry<Class<?>, List<FK>> entry : fkRelations.entrySet()) {
+			if(entry.getKey() == type) {
+				return true;
+			}
+		}
+		return false;
+	}
+	
 	@Deprecated
 	private static boolean clearLinkBFromLinkTable(LinkTable link, Entity<?> linkA) {
 		log.incrementTab("clearLinkBFromLinkTable: " + link, Logger.INFO);
@@ -313,6 +337,7 @@ public class OrmUtils {
 	
 	/**
 	 * get the SQL INSERT COMMAND as String
+	 * saves Primitive and One To One fields
 	 * this method doesnt implement good error handling so isEntityValidForSave should be invoked for save usage
 	 * If a pointer is given it will be used as first field to inert to
 	 * @param entity
@@ -457,7 +482,7 @@ public class OrmUtils {
 	protected static String getColumnNameFromPrimitiveField(Field f) {
 		return f.getName();
 	}
-
+	
 	/**
 	 * Checks if aan Entity is valid for saving
 	 * Does not check for correct use of Annotations -> expects Annotaions to be used correctly.
@@ -473,6 +498,10 @@ public class OrmUtils {
 	protected static boolean isEntityValidForSave(Entity<?> e) {
 		log.disable();
 		log.incrementTab("Checking if " + e.getClass() + " is valid for save...", Logger.DEBUG);
+		if(!isIitiated(e.getClass())) {
+			log.decrementTab("Done! " + e.getClass() + " is NOT VALID! reason -> Field Table is not initiated yet", Logger.WARN);
+			return false;
+		}
 		for (Field field : e.getClass().getDeclaredFields()) {
 			field.setAccessible(true);
 			Object content;
@@ -584,7 +613,7 @@ public class OrmUtils {
 						if(!fkRelations.containsKey(relationtable)) {// No table registered yet
 							fkRelations.put(relationtable, new ArrayList<FK>());//register table
 						}
-						fkRelations.get(relationtable).add(new FK(relationtable, type, field, ENTITY_PK_FIELDNAME, FK.ONE_TO_MANY));//add dependency for "many" table to own table
+						fkRelations.get(relationtable).add(new FK(relationtable, type, field, ENTITY_PK_FIELDNAME, FK.ONE_TO_MANY, true));//add dependency for "many" table to own table with cascade set
 					}
 					/**
 					 * One To One
@@ -593,7 +622,7 @@ public class OrmUtils {
 					 */
 					if(oto != null && otm == null) {
 						Class<? extends Entity<?>> relationtable = oto.referenceTable();
-						fkRelations.get(type).add(new FK(type, relationtable, field, ENTITY_PK_FIELDNAME, FK.ONE_TO_ONE));
+						fkRelations.get(type).add(new FK(type, relationtable, field, ENTITY_PK_FIELDNAME, FK.ONE_TO_ONE, false /*No cascade*/));
 					}
 					
 					if(m2m != null && oto == null && otm == null) {
