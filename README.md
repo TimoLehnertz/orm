@@ -16,7 +16,7 @@ This is my third attempt and last for crating a framework for orm between java a
 <p>
 A packege called testing is included implementing a simple database schema
 just look trough the A_Tester.java and try some of the provided test functions yourself.
-Most functionality is used there
+Most functionality is used there.<br>
 Reduce the log level via Orm.logger.setLogLevel(Logger....) to see whats going on
 </p>
 
