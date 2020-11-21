@@ -19,6 +19,10 @@ public class Hour extends Entity<Lesson> {
 	@NotNull
 	Time endTime;
 	
+	public Hour() {
+		super();
+	}
+	
 	public Hour(int index, Time startTime, Time endTime) {
 		super();
 		this.index = index;

@@ -7,7 +7,6 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 
 import orm.Entity;
-import orm.OrmUtils;
 
 /**
  * One To One Annotation

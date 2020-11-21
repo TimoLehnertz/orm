@@ -66,5 +66,9 @@ public class A_Tester {
 		Orm.dropDatabase();
 		Orm.initTables(Day.class, Hour.class, Lesson.class, Room.class, SchoolClass.class, Subject.class, Teacher.class, Timetable.class);
 		timetable.save();
+//		timetable.deleteAll();
+//		System.out.println(timetable);
+		timetable.select.query();
+		System.out.println(timetable.select.getResult());
 	}
 }

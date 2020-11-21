@@ -1,6 +1,5 @@
 package testing;
 
-import annotations.NotNull;
 import annotations.OneToOne;
 import annotations.SqlVarchar;
 import annotations.Table;

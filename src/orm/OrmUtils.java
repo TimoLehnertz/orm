@@ -18,6 +18,10 @@ import annotations.SqlLontext;
 import annotations.SqlText;
 import annotations.SqlVarchar;
 import annotations.Table;
+import sqlMagic.DbConnector;
+import sqlMagic.Delete;
+import sqlMagic.SqlParams;
+import sqlMagic.SupportedTypes;
 
 
 public class OrmUtils {
@@ -25,22 +29,6 @@ public class OrmUtils {
 	protected static int state = Orm.READ_WRITE;
 	
 	protected static final String NULLPTR = null;
-	
-	/**
-	 * relations -> Map wich should be initiated at the start via Orm.initTables()
-	 * after initialization this Map should contain every table as Key and
-	 * correspondingly a List of all Tables wich it is dependent on
-	 * 
-	 * later this will be needed for defining the order of table creation
-	 * 
-	 * Tables are represented by Entity extending class types
-	 */
-	private static Map<Class<?>, List<FK>> fkRelations = new LinkedHashMap<>();
-	
-	/**
-	 * Link tables for many to many relations
-	 */
-	private static List<LinkTable> linkTables = new ArrayList<>();
 	
 	/**
 	 * Simplified Database access
@@ -98,7 +86,7 @@ public class OrmUtils {
 	 * @param pointId id to point to
 	 * @return
 	 */
-	protected static long saveEntity(Entity<?> entity, FK pointer, long pointId) {
+	protected static int saveEntity(Entity<?> entity, FK pointer, long pointId) {
 		log.incrementTab("Saving Entity...", Logger.INFO);
 		log.info(pointer != null ? "received pointer " + pointer + " with id: " + pointId : "");
 		if(!isEntityValidForSave(entity)) {
@@ -111,7 +99,7 @@ public class OrmUtils {
 		}
 		boolean isRegistered = manager.isEntityRegistered(entity);
 		if(isRegistered) {//is already in the database -> UPDATE
-			long id = updateEntity(entity);
+			int id = updateEntity(entity);
 			if(id > -1) {
 				log.decrementTab("Done", Logger.INFO);
 			} else {
@@ -119,7 +107,7 @@ public class OrmUtils {
 			}
 			return id;
 		} else {// not in the database yet -> INSERT
-			long id = insertEntity(entity, pointer, pointId);
+			int id = insertEntity(entity, pointer, pointId);
 			if(id > -1) {
 				manager.registerEntity(entity, id);
 				log.decrementTab("Done", Logger.INFO);
@@ -130,9 +118,9 @@ public class OrmUtils {
 		}
 	}
 	
-	protected static long insertEntity(Entity<?> entity, FK pointer, long pointId) {
+	protected static int insertEntity(Entity<?> entity, FK pointer, long pointId) {
 		log.incrementTab("inserting Entity " + getTableName(entity.getClass()) + "...", Logger.INFO);
-		long id = -1;
+		int id = -1;
 		SqlParams insert = getInsertSql(entity, pointer, pointId);
 		if(insert != null) {
 			id = db.executeInsert(insert);
@@ -154,7 +142,7 @@ public class OrmUtils {
 		return id;
 	}
 	
-	protected static long updateEntity(Entity<?> entity) {
+	protected static int updateEntity(Entity<?> entity) {
 		log.incrementTab("Updating Entity " + entity.getTableName() + "...", Logger.INFO);
 		SqlParams update = getUpdateSql(entity);
 		if(update != null) {
@@ -190,7 +178,7 @@ public class OrmUtils {
 		}
 		SqlParams update = new SqlParams("UPDATE `" + entity.getTableName() + "` ");
 		String delimiter = " SET";
-		for (Field field : getPrimitiveFields(entity)) {// primitive fields
+		for (Field field : getPrimitiveFields(entity.getClass())) {// primitive fields
 			field.setAccessible(true);
 			update.sql += delimiter + "`" + getColumnNameFromPrimitiveField(field) + "` = ?";
 			delimiter = ", ";
@@ -222,7 +210,7 @@ public class OrmUtils {
 	 * @return succsess
 	 */
 	protected static boolean saveEntitiesManyRelations(Entity<?> entity) {
-		long id = manager.getIdFromEntity(entity);
+		int id = manager.getIdFromEntity(entity);
 		log.incrementTab("Saving " + entity.getClass() + "(ID=" + id + ") Many Relations...", Logger.INFO);
 		if(id == -1) {
 			log.decrementTab("Entity is not in the database yet aboarding", Logger.WARN);
@@ -232,21 +220,40 @@ public class OrmUtils {
 		int succeeded = 0;
 		/**
 		 * one to many
+		 * 1. Save all contents
+		 * 2. delete (all) wich are not contained
 		 */
-		List<FK> oneToManys = getOneToManyFksPointingTo(entity);
+		List<FK> oneToManys = manager.getOneToManyFksPointingTo(entity.getClass());
 		log.info("found " + oneToManys.size() + " ONE_TO_MANY relations: " + oneToManys);
 		for (FK fk : oneToManys) {
 			List<Entity<?>> content = fk.getListContentFor(entity);
+			List<Integer> contentIds = new ArrayList<>();
 			if(content == null && fk.getOwnField().isAnnotationPresent(NotNull.class)) {// is null and NotNullAnotated
 				log.decrementTab("ERROR fetching List content from Entity", Logger.WARN);
 				return false;
-			}
-			for (Entity<?> listEntity : content) {
-				if(saveEntity(listEntity, fk, id) !=id -1) {//succsess
-					succeeded++;
-				}else {//error
-					failed++;
+			} else if(content != null) {
+				for (Entity<?> listEntity : content) {
+					int contentId = saveEntity(listEntity, fk, id);
+					if(contentId != -1) {//succsess
+						contentIds.add(contentId);
+						succeeded++;
+					}else {//error
+						failed++;
+					}
 				}
+			} else {
+				//Null but valid all contents will be deleted from the database
+			}
+			/**
+			 * delete all wich are not contained in contebnt ids
+			 */
+			log.info("Deleting dead one to many relations");
+			Delete delete = new Delete(fk.getOwnTable());
+			boolean succsess = delete.where.pkNotIn(contentIds).and().columnEquals(fk.getColumnname(), id).execute();
+			if(succsess) {
+				succeeded++;
+			} else {
+				failed++;
 			}
 		}
 		/**
@@ -256,28 +263,39 @@ public class OrmUtils {
 		log.info("found " + links.size() + " MANY_TO_MANY relations: " + links);
 		for (LinkTable linkTable : links) {
 			log.info("handling linktable " + linkTable);
-//			clearLinkBFromLinkTable(linkTable, entity); //Deleting all list contents just to add them again @TODO better handling of deletion
 			List<Entity<?>> contentList = linkTable.getLinkAlistContent(entity);
 			if(contentList == null) {
 				if(linkTable.getLinkAReferenceField().isAnnotationPresent(NotNull.class)) {
 					log.warn("Link tbale list field was null! skipped");
 					failed++;
 				} else {
+					succeeded++;
 					continue;//skip as null is valid
 				}
 			}
 			log.info("Content size: " + contentList.size());
+			List<Integer> savedIds = new ArrayList<>();
 			for (Entity<?> content : contentList) {
-				content.save();
+				int savedId = content.save();
 				boolean succsess = db.execute(linkTable.getInsertSql(entity, content));
 				if(succsess) {
+					savedIds.add(savedId);
 					succeeded++;
 				} else {
 					failed++;
 				}
 			}
+			log.info("Deleting many one to many relations");
+			List<Integer> deletedIds = linkTable.deleteDeadLinks(id, savedIds);
+			Delete delete = new Delete(linkTable.linkB);
+			boolean succsess = delete.where.pkIn(deletedIds).execute();
+			if(succsess) {
+				succeeded++;
+			} else {
+				failed++;
+			}
 		}
-		log.info(succeeded + " succseeded saves, " + failed + " failed saves from " + (succeeded + failed) + " in total");
+		log.info(succeeded + " succseeded operations, " + failed + " failed operations from " + (succeeded + failed) + " in total");
 		log.decrementTab("Done", Logger.INFO);
 		return true;
 	}
@@ -288,7 +306,7 @@ public class OrmUtils {
 	 * @return
 	 */
 	protected static boolean isIitiated(Class<?> type){
-		for (Entry<Class<?>, List<FK>> entry : fkRelations.entrySet()) {
+		for (Entry<Class<?>, List<FK>> entry : manager.fkRelations.entrySet()) {
 			if(entry.getKey() == type) {
 				return true;
 			}
@@ -296,43 +314,14 @@ public class OrmUtils {
 		return false;
 	}
 	
-	@Deprecated
-	private static boolean clearLinkBFromLinkTable(LinkTable link, Entity<?> linkA) {
-		log.incrementTab("clearLinkBFromLinkTable: " + link, Logger.INFO);
-		long id = manager.getIdFromEntity(linkA);
-		if(id == -1) {
-			log.decrementTab("LinkA is not in the db yet", Logger.INFO);
-			return false;
-		}
-		SqlParams  delete = new SqlParams("DELETE FROM `" + getTableName(link.getLinkB()) + "`" +
-		" WHERE " + ENTITY_PK_FIELDNAME + " NOT IN (SELECT `" + getTableName(link.getLinkB()) + "` FROM `" + link.getTableName() + "` WHERE `" + getTableName(link.getLinkA()) + "` = ?);");
-		delete.add(id);
-		log.decrementTab("Done", Logger.INFO);
-		return db.execute(delete);
-	}
-	
 	private static List<LinkTable> getLinkTablesFrom(Class<?> from){
 		List<LinkTable> out = new ArrayList<>();
-		for (LinkTable linkTable : linkTables) {
+		for (LinkTable linkTable : manager.linkTables) {
 			if(linkTable.getLinkA() == from) {
 				out.add(linkTable);
 			}
 		}
 		return out;
-	}
-	
-	private static boolean clearOneToManyList(Entity<?> one, FK fk) {
-		long id = manager.getIdFromEntity(one);
-		log.incrementTab("clearOneToManyList from " + one.getTableName() + "(id=" + id + ")...", Logger.INFO);
-		if(id == -1) {
-			log.decrementTab("Entity is no in the database yet", Logger.WARN);
-			return false;
-		}
-		String fromTable = getTableName(fk.getOwnTable());
-		SqlParams delete = new SqlParams("DELETE FROM `" + fromTable + "` WHERE " + ENTITY_PK_FIELDNAME + " = ?;");
-		delete.add(id);
-		log.decrementTab("Done", Logger.INFO);
-		return db.execute(delete);
 	}
 	
 	/**
@@ -360,7 +349,7 @@ public class OrmUtils {
 			insert.sql += delimiter + "?";
 			delimiter = ", ";
 		}
-		for (Field field : getPrimitiveFields(entity)) {// Primitive fields
+		for (Field field : getPrimitiveFields(entity.getClass())) {// Primitive fields
 			field.setAccessible(true);
 			try {
 				insert.add(field.get(entity));
@@ -377,7 +366,7 @@ public class OrmUtils {
 				}
 			}
 		}
-		for (FK fk : getOneToOneFksByType(entity)) {//ONE TO ONE relations
+		for (FK fk : manager.getOneToOneFksFrom(entity.getClass())) {//ONE TO ONE relations
 			Entity<?> content = fk.getEntityContentFor(entity);
 			if(content == null && fk.isNotNull()) {
 				log.decrementTab("Reflection Error while trying to fetch fields content :( aboarding", Logger.ERROR);
@@ -409,11 +398,11 @@ public class OrmUtils {
 	protected static String getInsertColumnNameString(Entity<?> entity) {
 		String out = "";
 		String delimiter = "";
-		for (Field field : getPrimitiveFields(entity)) {//Primitive Fields
+		for (Field field : getPrimitiveFields(entity.getClass())) {//Primitive Fields
 			out += delimiter + "`" + getColumnNameFromPrimitiveField(field) + "`";
 			delimiter = ", ";
 		}
-		for (FK fk : getOneToOneFksByType(entity)) {// ONE TO ONE FOREIGN KEYS
+		for (FK fk : manager.getOneToOneFksFrom(entity.getClass())) {// ONE TO ONE FOREIGN KEYS
 			out += delimiter + "`" + fk.getColumnname() + "`";
 			delimiter = ", ";
 		}
@@ -428,9 +417,9 @@ public class OrmUtils {
 	 * @param entity
 	 * @return List of Fields
 	 */
-	protected static List<Field> getPrimitiveFields(Entity<?> entity){
+	public static List<Field> getPrimitiveFields(Class<?> entity){
 		List<Field> out = new ArrayList<>();
-		for (Field field : entity.getClass().getDeclaredFields()) {
+		for (Field field : entity.getDeclaredFields()) {
 			if(isFieldNoOrm(field)) {
 				continue;//Skip NoOrm Fields
 			}
@@ -442,30 +431,15 @@ public class OrmUtils {
 	}
 	
 	/**
-	 * search ONE to one fkRelations for
-	 * @param entity to search for
-	 * @return List of matching foreign keys
-	 */
-	protected static List<FK> getOneToOneFksByType(Entity<?> entity){
-		List<FK> out = new ArrayList<>();
-		for (FK fk : fkRelations.get(entity.getClass())) {
-			if(fk.getType() == FK.ONE_TO_ONE) {
-				out.add(fk);
-			}
-		}
-		return out;
-	}
-	
-	/**
-	 * search through all existing fks with type one to many and returm a list of all pointing to reference
+	 * search through all existing fks with type one to many and returm a list of all pointing from a reference
 	 * @param reference
 	 * @return List of FKs
 	 */
-	protected static List<FK> getOneToManyFksPointingTo(Entity<?> reference){
+	public static List<FK> getOneToManyFksPointingFrom(Class<?> reference){
 		List<FK> out = new ArrayList<>();
-		for (Entry<Class<?>, List<FK>> entry : fkRelations.entrySet()) {
+		for (Entry<Class<?>, List<FK>> entry : manager.fkRelations.entrySet()) {
 			for (FK fk : entry.getValue()) {//iterating trough all fks
-				if(fk.getType() == FK.ONE_TO_MANY && fk.getReferenceTable() == reference.getClass()) {
+				if(fk.getType() == FK.ONE_TO_MANY && fk.getOwnTable() == reference) {
 					out.add(fk);
 				}
 			}
@@ -481,6 +455,26 @@ public class OrmUtils {
 	 */
 	protected static String getColumnNameFromPrimitiveField(Field f) {
 		return f.getName();
+	}
+	
+	/**
+	 * check if all field names of a type exept of thos Annotated to be @NoOrm have valid names
+	 * @param type
+	 * @return isValid
+	 */
+	protected static boolean checkClassFieldNames(Class<?> type) {
+		List<String> fieldNamesLowerCase = new ArrayList<>();
+		for (Field field : type.getDeclaredFields()) {
+			if(isFieldNoOrm(field)) {
+				continue;
+			}
+			if(field.getName().toLowerCase() == ENTITY_PK_FIELDNAME.toLowerCase() || fieldNamesLowerCase.contains(field.getName().toLowerCase())) {
+				log.warn(type + " is NOT VALID! reason -> field " + field + " has an invalid name please chaneg it");
+				return false;
+			}
+			fieldNamesLowerCase.add(field.getName().toLowerCase());
+		}
+		return true;
 	}
 	
 	/**
@@ -588,9 +582,10 @@ public class OrmUtils {
 		for (Class<?> type : entities) {
 			if(!isOrmTypeValid(type, true)) {
 				continue;
-			} else {
-				if(!fkRelations.containsKey(type)) {
-					fkRelations.put(type, new ArrayList<FK>());
+			
+			} else if(checkClassFieldNames(type)){
+				if(!manager.fkRelations.containsKey(type)) {
+					manager.fkRelations.put(type, new ArrayList<FK>());
 				}
 				for (Field field : type.getDeclaredFields()) {
 					
@@ -610,10 +605,10 @@ public class OrmUtils {
 					if(otm != null && oto == null && m2m == null) {
 						log.debug("Initiating One To many relation from \"" + field + "\" To \"" + otm.referenceTable() + "\"");
 						Class<? extends Entity<?>> relationtable = otm.referenceTable();
-						if(!fkRelations.containsKey(relationtable)) {// No table registered yet
-							fkRelations.put(relationtable, new ArrayList<FK>());//register table
+						if(!manager.fkRelations.containsKey(relationtable)) {// No table registered yet
+							manager.fkRelations.put(relationtable, new ArrayList<FK>());//register table
 						}
-						fkRelations.get(relationtable).add(new FK(relationtable, type, field, ENTITY_PK_FIELDNAME, FK.ONE_TO_MANY, true));//add dependency for "many" table to own table with cascade set
+						manager.fkRelations.get(relationtable).add(new FK(relationtable, type, field, ENTITY_PK_FIELDNAME, FK.ONE_TO_MANY, true));//add dependency for "many" table to own table with cascade set
 					}
 					/**
 					 * One To One
@@ -622,18 +617,18 @@ public class OrmUtils {
 					 */
 					if(oto != null && otm == null) {
 						Class<? extends Entity<?>> relationtable = oto.referenceTable();
-						fkRelations.get(type).add(new FK(type, relationtable, field, ENTITY_PK_FIELDNAME, FK.ONE_TO_ONE, false /*No cascade*/));
+						manager.fkRelations.get(type).add(new FK(type, relationtable, field, ENTITY_PK_FIELDNAME, FK.ONE_TO_ONE, false /*No cascade*/));
 					}
 					
 					if(m2m != null && oto == null && otm == null) {
 						log.info("Initiated link table from: " + type + "." + field.getName() + " to table " + getTableName(m2m.referenceTable()));
 						final LinkTable link = new LinkTable(type, m2m.referenceTable(), field);
-						linkTables.add(link);
+						manager.linkTables.add(link);
 					}
 				}
 			}
 		}
-		log.info("Dependencies: " + fkRelations);
+		log.info("Dependencies: " + manager.fkRelations);
 		log.decrementTab();
 		log.info("Done!");
 	}
@@ -650,13 +645,13 @@ public class OrmUtils {
 		log.info("Sorting creation Order..");
 		log.incrementTab();
 		Map<Class<?>, List<FK>> pseudoCreated = new LinkedHashMap<>();//List of pseudo created Classes
-		int done = fkRelations.size();
-		for (int i = 0; i < fkRelations.size(); i++) {
-			if(pseudoCreated.size() == fkRelations.size()) {
+		int done = manager.fkRelations.size();
+		for (int i = 0; i < manager.fkRelations.size(); i++) {
+			if(pseudoCreated.size() == manager.fkRelations.size()) {
 				done = i;
 				break;
 			}
-			for (Entry<Class<?>, List<FK>> entry : fkRelations.entrySet()) {
+			for (Entry<Class<?>, List<FK>> entry : manager.fkRelations.entrySet()) {
 				if(pseudoCreated.containsKey(entry.getKey())){//check if already "created"
 					continue;
 				}
@@ -673,15 +668,15 @@ public class OrmUtils {
 				}
 			}
 		}
-		if(done == fkRelations.size()) {//no sucsess
+		if(done == manager.fkRelations.size()) {//no sucsess
 			log.warn("Could not define Creation order of tables! Do you have loops in your table scheme?");
 		} else { // succsess
-			log.info("Created creation order in " + done + " / " + fkRelations.size() + " iterations :)");
+			log.info("Created creation order in " + done + " / " + manager.fkRelations.size() + " iterations :)");
 			log.info("order: " + pseudoCreated);
 		}
 		log.decrementTab();
 		log.info("Done!");
-		fkRelations = pseudoCreated;//applying sort
+		manager.fkRelations = pseudoCreated;//applying sort
 	}
 	
 	/**
@@ -693,7 +688,7 @@ public class OrmUtils {
 		log.info("Creating tables...");
 		log.incrementTab();
 		int skipped = 0;
-		for (Entry<Class<?>, List<FK>> entry : fkRelations.entrySet()) {
+		for (Entry<Class<?>, List<FK>> entry : manager.fkRelations.entrySet()) {
 			if(!createTable(entry.getKey(), entry.getValue())) {
 				skipped++;
 			}
@@ -715,7 +710,7 @@ public class OrmUtils {
 		log.info("Creating link tables");
 		log.incrementTab();
 		boolean succsess = true;
-		for (LinkTable linkTable : linkTables) {
+		for (LinkTable linkTable : manager.linkTables) {
 			if(!linkTable.isCreated()) {
 				log.info("Creating Link table \"" + linkTable.getTableName() + "\"");
 				log.debug(linkTable.getCreateSql());
@@ -947,7 +942,7 @@ public class OrmUtils {
 	 * @param type
 	 * @return table name or null in case of error
 	 */
-	protected static String getTableName(Class<?> type) {
+	public static String getTableName(Class<?> type) {
 		Table table = type.getAnnotation(Table.class);
 		if(table == null) {
 			log.warn("You did not provide a Table Anotation for class \"" + type + "\"! Please do so by adding @Table(name = \"<tableName>\"");
@@ -1040,17 +1035,19 @@ public class OrmUtils {
 			return out + "]";
 		}
 		
-		String out = "\"" + o.getClass().getSimpleName() + "\": {\n " + getnTabs(tabs);
+		String out = "\"" + o.getClass().getSimpleName() + "\": { " + getnTabs(tabs);
 		Field[] fields = o.getClass().getDeclaredFields();
+		String delimiter = "";
 		for (Field field : fields) {
 			try {
 				field.setAccessible(true);
 				Object fieldContent = field.get(o);
 				if(fieldContent != null) {
-					out +=",\n" + getnTabs(tabs) +  " \"" + field.getName() + "\": " + stringifyObject(fieldContent, tabs);
+					out += delimiter + "\n" + getnTabs(tabs) +  " \"" + field.getName() + "\": " + stringifyObject(fieldContent, tabs);
 				} else {
-					out +=",\n" + getnTabs(tabs) +  " \"" + field.getName() + "\": NULL" ;
+					out += delimiter + "\n" + getnTabs(tabs) +  " \"" + field.getName() + "\": NULL" ;
 				}
+				delimiter = ",";
 			} catch (IllegalArgumentException | IllegalAccessException e) {
 				e.printStackTrace();
 			}

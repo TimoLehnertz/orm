@@ -1,5 +1,10 @@
 package orm;
 
+import java.util.List;
+
+import sqlMagic.DbConnector;
+import sqlMagic.Select;
+
 public class Orm {
 
 	/**
@@ -18,7 +23,17 @@ public class Orm {
 	 */
 	public static Logger logger = new Logger();
 	
-	
+	/**
+	 * Select all from type and return them
+	 * @param <T> Type
+	 * @param from Type
+	 * @return list
+	 */
+	public <T extends Entity<?>> List<T> selectAll(Class<T> from){
+		Select<T> select = new Select<>(from);
+		select.query();
+		return select.getResult();
+	}
 	
 	/**
 	 * 
@@ -45,7 +60,7 @@ public class Orm {
 	
 	public static boolean dropDatabase() {
 		logger.info("Dropping Database \"" + db.getDbName() + "\"");
-		return db.execute("DROP DATABASE IF EXISTS " + db.dbName + ";");
+		return db.execute("DROP DATABASE IF EXISTS " + db.getDbName() + ";");
 	}
 	
 	@SafeVarargs
@@ -57,7 +72,7 @@ public class Orm {
 		return OrmUtils.isEntityValidForSave(e);
 	}
 	
-	public static long save(Entity<?> entity) {
+	public static int save(Entity<?> entity) {
 		return OrmUtils.saveEntity(entity, null, 0);
 	}
 	

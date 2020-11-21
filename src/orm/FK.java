@@ -1,7 +1,11 @@
 package orm;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+
+import sqlMagic.SqlParams;
 
 public class FK {
 
@@ -85,6 +89,26 @@ public class FK {
 	}
 	
 	/**
+	 * get the pk id from the table row wich this fk is pointing to in the row of pk = pointingId
+	 * @param pointingId
+	 * @return
+	 */
+	public int getPointedId(int pointingId) {
+		SqlParams select = new SqlParams("SELECT `" + getColumnname() + "` FROM `" + OrmUtils.getTableName(ownTable) + "` WHERE `" + OrmUtils.ENTITY_PK_FIELDNAME + "` = ?;");
+		select.add(pointingId);
+		List<Map<String, Object>> result = select.query();
+		if(result.size() > 0) {
+			if(result.get(0).get(getColumnname()) != null) {
+				return (int) result.get(0).get(getColumnname());
+			} else {
+				return -1;
+			}
+		} else {
+			return -1;
+		}
+	}
+	
+	/**
 	 * Get the List<Entity> content of the pointing Field
 	 * Only allowed for Type ONE TO MANY
 	 * @param instance to get for
@@ -103,6 +127,54 @@ public class FK {
 			Orm.logger.warn("incorrect usage of getListContentFor(): used on a ONE_TO_ONE FK");
 			return null;
 		}
+	}
+	
+	public List<Integer> getIdListPointingTo(List<Integer> toList){
+		List<Integer> idList = new ArrayList<>();
+		for (Integer id : toList) {
+			idList.addAll(getIdListPointingTo(id));
+		}
+		return idList;
+	}
+	
+	public List<Integer> getIdListPointingTo(long id){
+		List<Integer> idList = new ArrayList<>();
+		SqlParams select = new SqlParams("SELECT `" + OrmUtils.ENTITY_PK_FIELDNAME + "` FROM `" + OrmUtils.getTableName(ownTable) + "` WHERE `" + getColumnname() + "` = ?;");
+		select.add(id);
+		List<Map<String, Object>> result = select.query();
+		for (Map<String, Object> map : result) {
+			if(map.containsKey(OrmUtils.ENTITY_PK_FIELDNAME)) {
+				idList.add((int) map.get(OrmUtils.ENTITY_PK_FIELDNAME));
+			}
+		}
+		return idList;
+	}
+	
+	public List<Integer> getPointedIdsFrom(List<Integer> toList) {
+		List<Integer> idList = new ArrayList<>();
+		if(toList == null) {
+			return idList;
+		}
+		if(toList.size() == 0) {
+			return idList;
+		}
+		SqlParams select = new SqlParams("SELECT `" + getColumnname() + "` FROM `" + OrmUtils.getTableName(ownTable) + "` WHERE `" + OrmUtils.ENTITY_PK_FIELDNAME + "` IN (");
+		String delimiter = "";
+		for (Integer id : toList) {
+			select.sql += delimiter + "?";
+			delimiter = ", ";
+			select.add(id);
+		}
+		select.sql += ");";
+		List<Map<String, Object>> result = select.query();
+		for (Map<String, Object> map : result) {
+			if(map.containsKey(getColumnname())) {
+				if(map.get(getColumnname()) != null) {
+					idList.add((int) map.get(getColumnname()));
+				}	
+			}
+		}
+		return idList;
 	}
 	
 	private Object getContentFor(Entity<?> instance) {
@@ -145,11 +217,11 @@ public class FK {
 		return type;
 	}
 
-	protected Field getOwnField() {
+	public Field getOwnField() {
 		return ownField;
 	}
 
-	protected Class<?> getOwnTable() {
+	public Class<?> getOwnTable() {
 		return ownTable;
 	}
 

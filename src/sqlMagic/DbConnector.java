@@ -1,4 +1,4 @@
-package orm;
+package sqlMagic;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -12,6 +12,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+
+import orm.Orm;
 
 /**
  * Class for interactions with the database
@@ -38,7 +40,7 @@ public class DbConnector {
 		super();
 	}
 	
-	protected static DbConnector getInstance() {
+	public static DbConnector getInstance() {
 		return instance;
 	}
 	
@@ -103,25 +105,27 @@ public class DbConnector {
 		}
 	}
 	
-	protected long executeInsert(String sql, String argTypes, Object... objects) {
+	public long executeInsert(String sql, String argTypes, Object... objects) {
 		return executeInsert(new SqlParams(argTypes, sql, objects));
 	}
 	
-	protected long executeInsert(SqlParams params) {
+	public int executeInsert(SqlParams params) {
 		Orm.logger.debug("executingInsert: " + params);
 		if(!isOperatable()) {
 			return -1;
 		}
+		params.beforeExecute();
 		try(Connection conn = getConnection()) {
 			try (PreparedStatement stmt = conn.prepareStatement(params.sql, Statement.RETURN_GENERATED_KEYS)){
 				params.bindParams(stmt);
 				stmt.execute();
 				ResultSet rs = stmt.getGeneratedKeys();
-				long id = -1;
+				int id = -1;
 				if(rs.next()) {
-					id = rs.getLong(1);
+					id = rs.getInt(1);
 				}
 				rs.close();
+				params.afterExecute(null);
 				return id;
 			} catch (SQLException e) {
 				e.printStackTrace();
@@ -132,15 +136,16 @@ public class DbConnector {
 		return -1;
 	}
 	
-	protected List<Map<String, Object>> executeQuery(String sql, String argTypes, Object... objects) {
+	public List<Map<String, Object>> executeQuery(String sql, String argTypes, Object... objects) {
 		return executeQuery(new SqlParams(argTypes, sql, objects));
 	}
 	
-	protected List<Map<String, Object>> executeQuery(SqlParams params){
+	public List<Map<String, Object>> executeQuery(SqlParams params){
 		if(!isOperatable()) {
 			return new ArrayList<Map<String, Object>>();
 		}
 		Orm.logger.debug("executeQuery: " + params);
+		params.beforeExecute();
 		List<Map<String, Object>> rsList = new ArrayList<Map<String, Object>>();
 		try(Connection conn = getConnection()) {
 			try(PreparedStatement stmt = conn.prepareStatement(params.sql)){
@@ -162,21 +167,24 @@ public class DbConnector {
 			Orm.logger.warn("executeQuery failed: " + params + " | Message: " + e.getMessage());
 			return rsList;
 		}
+		params.afterExecute(rsList);
 		return rsList;
 	}
 	
-	protected boolean execute(String sql) {
+	public boolean execute(String sql) {
 		return execute(sql, null);
 	}
 	
-	protected boolean execute(String sql, String argTypes, Object... objects) {
+	public boolean execute(String sql, String argTypes, Object... objects) {
 		return execute(new SqlParams(argTypes, sql, objects));
 	}
 	
-	protected boolean execute(SqlParams params) {
+	public boolean execute(SqlParams params) {
 		if(params == null || !isOperatable()) {
 			return false;
 		}
+		params.beforeExecute();
+		
 		Orm.logger.debug("execute: " + params);
 		try(Connection conn = getConnection()) {
 			try(PreparedStatement stmt = conn.prepareStatement(params.sql)) {
@@ -186,6 +194,7 @@ public class DbConnector {
 				Orm.logger.warn("execute failed: " + params + " | Message: " + e.getMessage());
 				return false;
 			}
+			params.afterExecute(null);
 			return true;
 		} catch (SQLException e1) {
 			Orm.logger.warn("execute failed: " + params + " | Message: " + e1.getMessage());
@@ -194,7 +203,7 @@ public class DbConnector {
 	}
 
 
-	protected boolean doesTableExist(String tableName) {
+	public boolean doesTableExist(String tableName) {
 		if(tableName == null || !isOperatable()) {
 			return false;
 		}
@@ -217,39 +226,39 @@ public class DbConnector {
 	 * Getters /  Setters
 	 */
 	
-	protected String getDbUser() {
+	public String getDbUser() {
 		return dbUser;
 	}
 
-	protected void setDbUser(String dbUser) {
+	public void setDbUser(String dbUser) {
 		this.dbUser = dbUser;
 	}
 
-	protected String getDbPassowrd() {
+	public String getDbPassowrd() {
 		return dbPassowrd;
 	}
 
-	protected void setDbPassowrd(String dbPassowrd) {
+	public void setDbPassowrd(String dbPassowrd) {
 		this.dbPassowrd = dbPassowrd;
 	}
 
-	protected String getDbName() {
+	public String getDbName() {
 		return dbName;
 	}
 
-	protected void setDbName(String dbName) {
+	public void setDbName(String dbName) {
 		this.dbName = dbName;
 	}
 
-	protected int getDbPort() {
+	public int getDbPort() {
 		return dbPort;
 	}
 
-	protected void setDbPort(int dbPort) {
+	public void setDbPort(int dbPort) {
 		this.dbPort = dbPort;
 	}
 
-	protected void setDbUrl(String dbUrl) {
+	public void setDbUrl(String dbUrl) {
 		this.dbUrl = dbUrl;
 	}
 }

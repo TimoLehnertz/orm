@@ -8,31 +8,31 @@ public class Logger {
 	public static final int ERROR = 0;
 	public static final int NO_LOG = -1;
 	
-	static final String LINE_PLACEHOLDER = "--  ";
+	private static final String LINE_PLACEHOLDER = "--  ";
 	
 	private boolean enabled = true;
 	
 	protected int loglevel = DEBUG;
 	
-	public int tab = 0;
+	private int tab = 0;
 	
-	protected boolean debug(Object message) {
+	public boolean debug(Object message) {
 		return log(message, DEBUG);
 	}
 	
-	protected boolean info(Object message) {
+	public boolean info(Object message) {
 		return log(message, INFO);
 	}
 	
-	protected boolean warn(Object message) {
+	public boolean warn(Object message) {
 		return log(message, WARN);
 	}
 	
-	protected boolean error(Object message) {
+	public boolean error(Object message) {
 		return log(message, ERROR);
 	}
 	
-	protected boolean log(Object message, int logLevel) {
+	private boolean log(Object message, int logLevel) {
 		if(logLevel > this.loglevel || message.toString().length() == 0 || !enabled) {
 			return false;
 		}

@@ -1,4 +1,4 @@
-package orm;
+package sqlMagic;
 
 import java.lang.reflect.Field;
 import java.text.SimpleDateFormat;
@@ -20,8 +20,8 @@ import annotations.Unique;
 
 public class SupportedTypes {
 
-	protected static final int MAX_TEXT_SIZE = 65535;
-	protected static final long MAX_LONGTEXT_SIZE = 4294967295l;
+	public static final int MAX_TEXT_SIZE = 65535;
+	public static final long MAX_LONGTEXT_SIZE = 4294967295l;
 	
 	private static final List<Class<?>> supportedTypes = Arrays.asList(Boolean.TYPE, Boolean.class, Byte.TYPE, Byte.class, Short.TYPE, Short.class, Integer.TYPE,
 			Integer.class, Long.TYPE, Long.class, Float.TYPE, Float.class, Double.class, Double.TYPE, Double.class, Double.TYPE,
@@ -62,11 +62,11 @@ public class SupportedTypes {
 	 * @param type
 	 * @return supported
 	 */
-	protected static boolean isTypeValidForkey(Class<?> type) {
+	public static boolean isTypeValidForkey(Class<?> type) {
 		return supportedKeyTypes.contains(type);
 	}
 	
-	protected static String javaFieldToMysqlType(Field field) {
+	public static String javaFieldToMysqlType(Field field) {
 		String out = "";
 		Class<?> c = field.getType();
 		SqlVarchar varchar = field.getAnnotation(SqlVarchar.class);
@@ -208,7 +208,7 @@ public class SupportedTypes {
 		throw new IllegalArgumentException("Type \"" + c + "\" is Not suported :(");
 	}
 	
-	protected static String getMysqlValueFromField(Field f, Object ctx) throws IllegalArgumentException, IllegalAccessException {
+	public static String getMysqlValueFromField(Field f, Object ctx) throws IllegalArgumentException, IllegalAccessException {
 		f.setAccessible(true);
 		Class<?> c = f.getType();
 		/**
@@ -267,7 +267,7 @@ public class SupportedTypes {
 		return null;
 	}
 	
-	protected static String getMysqlValueFromObject(Object o){
+	public static String getMysqlValueFromObject(Object o){
 		Class<?> c = o.getClass();
 		String out = "";
 		/**
@@ -324,14 +324,5 @@ public class SupportedTypes {
 			return "\"" + (String) o + "\"";
 		}
 		return out;
-	}
-	
-	/**
-	 * @todo
-	 * @param object
-	 * @return object
-	 */
-	protected static Object javaObjectFromSql(Object object) {
-		return object;
 	}
 }

@@ -1,10 +1,13 @@
-package orm;
+package sqlMagic;
 
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+
+import orm.*;
 
 /**
  * Class fo
@@ -13,10 +16,13 @@ import java.util.List;
  */
 
 public class SqlParams {
+	
+	private DbConnector db = DbConnector.getInstance();
 
-	public String argTypes = "";
 	public String sql = "";
-	public List<Object> data = new ArrayList<>();
+	private String argTypes = "";
+	private List<Object> data = new ArrayList<>();
+	private List<SqlParams> appended = new ArrayList<>();
 	
 	public SqlParams() {
 		super();
@@ -27,10 +33,22 @@ public class SqlParams {
 		this.sql = sql;
 	}
 	
+	/**
+	 * Not recomended
+	 * @param argTypes
+	 * @param sql
+	 * @param data
+	 */
 	public SqlParams(String argTypes, String sql, Object[] data) {
 		this(argTypes, sql, Arrays.asList(data));
 	}
 	
+	/**
+	 * Not recomended
+	 * @param argTypes
+	 * @param sql
+	 * @param data
+	 */
 	public SqlParams(String argTypes, String sql, List<Object> data) {
 		super();
 		this.argTypes = argTypes;
@@ -55,10 +73,24 @@ public class SqlParams {
 		return true;
 	}
 	
+	/**
+	 * simplified bind params functionality
+	 * @param stmt
+	 * @return
+	 * @throws SQLException
+	 */
 	public PreparedStatement bindParams(PreparedStatement stmt) throws SQLException {
 		return bindParams(stmt, argTypes, data.toArray());
 	}
 	
+	/**
+	 * Binds the given / added data to the given statement
+	 * @param stmt
+	 * @param argTypes
+	 * @param objects
+	 * @return
+	 * @throws SQLException
+	 */
 	static PreparedStatement bindParams(PreparedStatement stmt, String argTypes, Object[] objects) throws SQLException {
 		if(argTypes != null) {
 			if(argTypes.length() != objects.length) {
@@ -81,7 +113,6 @@ public class SqlParams {
 						default: throw new IllegalArgumentException("Invalid use ofargTypes in Bind param!");
 						}
 					} catch(ClassCastException e) {
-						System.out.println(argTypes.charAt(i));
 						e.printStackTrace();
 					}
 				}
@@ -90,8 +121,86 @@ public class SqlParams {
 		return stmt;
 	}
 	
+	public boolean isEmpty() {
+		String fullSql = sql;
+		for (SqlParams append : appended) {
+			fullSql += append.sql;
+		}
+		return fullSql.length() == 0;
+	}
+	
+	/**
+	 * Append another SqlParam to this one
+	 * @param append
+	 */
+	public void append(SqlParams append) {
+		append.beforeExecute();
+		sql += append.sql;
+		for (Object o : append.data) {
+			add(o);
+		}
+	}
+	
+	protected void appendReference(SqlParams reference) {
+		appended.add(reference);
+	}
+	
+	/**
+	 * DbConnector executes this method before this statement gets executed
+	 * 
+	 * Ment to be overidden
+	 * 
+	 * if overridden 
+	 * super .beforeExecute should still be executed but order can be controlled
+	 */
+	protected void beforeExecute() {
+		for (SqlParams reference : appended) {
+			append(reference);
+		}
+		appended.clear();
+	}
+	
+	/**
+	 * DbConnector executes this method after this statement gets executed
+	 * only gets called in case of succsess
+	 * Ment to be overidden
+	 */
+	protected void afterExecute(List<Map<String, Object>> result) {
+//		Do nothing by default
+	}
+
+	private void reset() {
+		sql = "";
+		argTypes = "";
+		data = new ArrayList<>();
+		appended = new ArrayList<>();
+	}
+	
+	
 	@Override
 	public String toString() {
 		return "SQL: " + sql + " | Data: " + data;
+	}
+
+	/**
+	 * Execute methods reset this instance afer execution
+	 * @return
+	 */
+	public boolean execute() {
+		boolean succsess = db.execute(this);
+		reset();
+		return succsess;
+	}
+	
+	public long insert() {
+		long insertedId = db.executeInsert(this);
+		reset();
+		return insertedId;
+	}
+	
+	public List<Map<String, Object>> query() {
+		List<Map<String, Object>> result = db.executeQuery(this);
+		reset();
+		return result;
 	}
 }

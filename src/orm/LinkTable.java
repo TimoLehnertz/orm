@@ -3,6 +3,11 @@ package orm;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+
+import sqlMagic.DbConnector;
+import sqlMagic.Delete;
+import sqlMagic.SqlParams;
 
 /**
  * Class for storing and managing A link table between two Many To Many Tables
@@ -10,7 +15,7 @@ import java.util.List;
  *
  */
 
-class LinkTable {
+public class LinkTable {
 
 	public Class<?> linkA;
 	public Class<?> linkB;
@@ -51,6 +56,39 @@ class LinkTable {
 		return sql;
 	}
 	
+	/**
+	 * Deletes all entries wich are pointing from given idA but are not contained in listB
+	 * used for cleanup after UPDATE
+	 * @param idA
+	 * @param listB
+	 * @return List of deleted ids
+	 */
+	public List<Integer> deleteDeadLinks(int idA, List<Integer> listB) {
+		SqlParams delete = new SqlParams("DELETE FROM `" + getTableName() + "` WHERE `" + OrmUtils.getTableName(linkA) + "` = ?");
+		delete.add(idA);
+		delete.sql += " AND `" + OrmUtils.getTableName(linkB) + "` NOT IN(";
+		String delimiter = "";
+		for (int id : listB) {
+			delete.sql += delimiter + "?";
+			delete.add(id);
+			delimiter = ",";
+		}
+		delete.sql += ");";
+		boolean succsess = delete.execute();
+		List<Integer> deletedIds = new ArrayList<>();
+		if(succsess) {
+			List<Integer> existingIds = getLinkBIdsByLinkA(idA);
+			for (int existedId : existingIds) {
+				if(!listB.contains(existedId)) {
+					deletedIds.add(existedId);
+				}
+			}
+			return deletedIds;
+		} else {
+			return deletedIds;
+		}
+	}
+	
 	@SuppressWarnings("unchecked")//@TODo solution...
 	public List<Entity<?>> getLinkAlistContent(Entity<?> reference){
 		List<Entity<?>> out = new ArrayList<>();
@@ -60,6 +98,33 @@ class LinkTable {
 			Orm.logger.warn("getLinkAlistContent failed. message: " + e.getMessage());
 		}
 		return out;
+	}
+	
+	public List<Integer> getLinkBIdsByLinkA(int idA){
+		List<Integer> out = new ArrayList<>();
+		SqlParams select = new SqlParams("SELECT `" + OrmUtils.ENTITY_PK_FIELDNAME +"` FROM `" + OrmUtils.getTableName(linkB) + "` WHERE `" + OrmUtils.ENTITY_PK_FIELDNAME + "` IN ( SELECT `" + OrmUtils.getTableName(linkB) + "` FROM `" + getTableName() + "` WHERE `" + OrmUtils.getTableName(linkA) + "` = ?);");
+		select.add(idA);
+		for (Map<String, Object> row : select.query()) {
+			out.add((Integer) row.get(OrmUtils.ENTITY_PK_FIELDNAME));
+		}
+		return out;
+	}
+	
+	/**
+	 * Deletes all rows from linkB wich are related to one of the ownerIds from linkA
+	 * @param ownerIds
+	 * @return succsess
+	 */
+	public boolean deleteLinkBRowsOwnedBy(List<Integer> ownerIds) {
+		Orm.logger.incrementTab("Deleting " + getTableName() + " many to many contents from ownerIds " + ownerIds + "...", Logger.INFO);
+		if(ownerIds.size() == 0) {
+			return false;
+		}
+		Delete delete = new Delete(linkB);
+		delete.where.pkIn(ownerIds);
+		
+		Orm.logger.decrementTab("Done", Logger.INFO);
+		return delete.execute();
 	}
 	
 	public String getTableName() {
