@@ -12,7 +12,7 @@ A package testing is included to see some demos and test the limits of this fram
 <h3>Installation:</h3>
 <ul>
   <li>download and add the newest version <a href="https://github.com/TimoLehnertz/orm/raw/main/orm-beta-1.3.jar">here</a> and add it to your projects classpath</li>
-  <li>download and add the your mysql driver <a href="https://dev.mysql.com/downloads/connector/j/">This one works</a></li>
+  <li>download and add the your mysql driver. <a href="https://dev.mysql.com/downloads/connector/j/">This one works</a></li>
 </ul>
 
 <h3>Draw backs and future plans</h3>
