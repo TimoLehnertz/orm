@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import annotations.NotNull;
 import sqlMagic.SqlParams;
 
 public class FK {
@@ -135,6 +136,17 @@ public class FK {
 			idList.addAll(getIdListPointingTo(id));
 		}
 		return idList;
+	}
+	
+	
+	public boolean setNull(int ownId) {
+		if(ownField.isAnnotationPresent(NotNull.class)) {
+			Orm.logger.warn("attempted to set @NotNull Annotated foreign key to null. Skipped");
+			return false;
+		}
+		SqlParams update = new SqlParams("UPDATE `" + OrmUtils.getTableName(ownTable) + "` SET `" + getColumnname() + "` = NULL WHERE `" + OrmUtils.ENTITY_PK_FIELDNAME + "` = ?;");
+		update.add(ownId);
+		return update.execute();
 	}
 	
 	public List<Integer> getIdListPointingTo(long id){

@@ -78,6 +78,18 @@ public class RegisterManager {
 		return out;
 	}
 	
+	public List<FK> getOneToOnePointingTo(Class<?> type){
+		List<FK> out = new ArrayList<>();
+		for (Entry<Class<?>, List<FK>> entry : fkRelations.entrySet()) {
+			for ( FK fk : entry.getValue()) {
+				if(fk.getReferenceTable() == type && fk.type == FK.ONE_TO_ONE) {
+					out.add(fk);
+				}
+			}
+		}
+		return out;
+	}
+	
 	public List<LinkTable> getLinkTablesFromLinkA(Class<?> linkA){
 		List<LinkTable> out = new ArrayList<>();
 		for (LinkTable linkTable : linkTables) {

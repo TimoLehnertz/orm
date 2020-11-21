@@ -3,6 +3,7 @@ package testing;
 import java.sql.Date;
 import java.sql.Time;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -56,9 +57,7 @@ public class A_Tester {
 		
 		Day day = new Day(lessons, Date.valueOf("2020-11-16"));
 		
-		Timetable timetable = new Timetable(Arrays.asList(day), ita58, Date.valueOf("2020-11-16"));
-		
-//		System.out.println(timetable);
+		Timetable timetable = new Timetable(new ArrayList<Day>(Arrays.asList(day)), ita58, Date.valueOf("2020-11-16"));
 		
 		
 		Orm.initDb("localhost", "root", "", "orm_test");
@@ -66,9 +65,23 @@ public class A_Tester {
 		Orm.dropDatabase();
 		Orm.initTables(Day.class, Hour.class, Lesson.class, Room.class, SchoolClass.class, Subject.class, Teacher.class, Timetable.class);
 		timetable.save();
+		System.out.println(Orm.selectAll(Timetable.class));
+		
+		System.out.println("---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------");
+		
+		timetable.schoolClass = null;
+		timetable.save();
+		System.out.println(Orm.selectAll(Timetable.class));
+		
 //		timetable.deleteAll();
 //		System.out.println(timetable);
-		timetable.select.query();
-		System.out.println(timetable.select.getResult());
+//		timetable.select.query();
+//		System.out.println(timetable.select.getResult());
+		
+//		timetable.days.remove(0);
+////		System.out.println(timetable);
+//		timetable.save();
+//		
+		
 	}
 }

@@ -3,18 +3,13 @@ package orm;
 import java.util.List;
 
 import sqlMagic.DbConnector;
+import sqlMagic.Delete;
 import sqlMagic.Select;
 
 public class Orm {
 
 	/**
-	 * States
-	 */
-	public static final int READ_ONLY = 0;
-	public static final int READ_WRITE = 1;
-
-	/**
-	 * Simplified acces to DbConnector Object
+	 * Simplified acces to DbConnector singelton
 	 */
 	private static DbConnector db = DbConnector.getInstance();
 	
@@ -23,16 +18,37 @@ public class Orm {
 	 */
 	public static Logger logger = new Logger();
 	
+	
 	/**
-	 * Select all from type and return them
-	 * @param <T> Type
-	 * @param from Type
-	 * @return list
+	 * returns a list of all saved entities
+	 * @param <T>
+	 * @param type
+	 * @return
 	 */
-	public <T extends Entity<?>> List<T> selectAll(Class<T> from){
-		Select<T> select = new Select<>(from);
+	public static <T extends Entity<?>> List<T> selectAll(Class<T> type){
+		Select<T> select = new Select(type);
 		select.query();
 		return select.getResult();
+	}
+	
+	/**
+	 * Returns a select Object for the given type
+	 * @param <T>
+	 * @param type
+	 * @return
+	 */
+	public static <T extends Entity<?>> Select<T> selectFrom(Class<T> type){
+		Select<T> select = new Select(type);
+		return select;
+	}
+	
+	/**
+	 * Deletes all of a type
+	 * @param type
+	 * @return
+	 */
+	public static boolean deleteAll(Class<?> type) {
+		return new Delete(type).execute();
 	}
 	
 	/**
@@ -113,13 +129,5 @@ public class Orm {
 
 	public static void setDbUrl(String dbUrl) {
 		db.setDbUrl(dbUrl);
-	}
-	
-	public static int getMode() {
-		return OrmUtils.state;
-	}
-
-	public static void setmode(int state) {
-		OrmUtils.state = state;
 	}
 }

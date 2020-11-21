@@ -79,7 +79,7 @@ public class SqlParams {
 	 * @return
 	 * @throws SQLException
 	 */
-	public PreparedStatement bindParams(PreparedStatement stmt) throws SQLException {
+	protected PreparedStatement bindParams(PreparedStatement stmt) throws SQLException {
 		return bindParams(stmt, argTypes, data.toArray());
 	}
 	
@@ -91,7 +91,7 @@ public class SqlParams {
 	 * @return
 	 * @throws SQLException
 	 */
-	static PreparedStatement bindParams(PreparedStatement stmt, String argTypes, Object[] objects) throws SQLException {
+	protected static PreparedStatement bindParams(PreparedStatement stmt, String argTypes, Object[] objects) throws SQLException {
 		if(argTypes != null) {
 			if(argTypes.length() != objects.length) {
 				throw new IllegalArgumentException("Number of given objects doesnt match argTypes String! given " + objects.length);
@@ -121,7 +121,7 @@ public class SqlParams {
 		return stmt;
 	}
 	
-	public boolean isEmpty() {
+	protected boolean isEmpty() {
 		String fullSql = sql;
 		for (SqlParams append : appended) {
 			fullSql += append.sql;
@@ -133,7 +133,7 @@ public class SqlParams {
 	 * Append another SqlParam to this one
 	 * @param append
 	 */
-	public void append(SqlParams append) {
+	protected void append(SqlParams append) {
 		append.beforeExecute();
 		sql += append.sql;
 		for (Object o : append.data) {
@@ -169,7 +169,7 @@ public class SqlParams {
 //		Do nothing by default
 	}
 
-	private void reset() {
+	protected void reset() {
 		sql = "";
 		argTypes = "";
 		data = new ArrayList<>();

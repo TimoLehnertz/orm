@@ -31,6 +31,12 @@ public class Select<T extends Entity<?>> extends SqlParams{
 		this.where = new Where(this);
 	}
 	
+	@Override
+	protected void reset() {
+		super.reset();
+		sql = "SELECT * FROM `" + OrmUtils.getTableName(from) + "`";
+	}
+	
 	private T getNewType() {
 		try {
 			return from.getConstructor().newInstance();
@@ -166,7 +172,17 @@ public class Select<T extends Entity<?>> extends SqlParams{
 		return from;
 	}
 
+	/**
+	 * returns the last result
+	 * and empties it
+	 * @return
+	 */
 	public List<T> getResult() {
-		return queryResult;
+		List<T> tmp = queryResult;
+//		for (T t : queryResult) {
+//			tmp.add(t);
+//		}
+		queryResult = new ArrayList<>();
+		return tmp;
 	}
 }

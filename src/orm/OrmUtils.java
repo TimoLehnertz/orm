@@ -25,8 +25,6 @@ import sqlMagic.SupportedTypes;
 
 
 public class OrmUtils {
-
-	protected static int state = Orm.READ_WRITE;
 	
 	protected static final String NULLPTR = null;
 	
@@ -150,6 +148,7 @@ public class OrmUtils {
 			if(succsess) {
 				succsess = saveEntitiesManyRelations(entity);
 				log.decrementTab(succsess ? "DONE" : "Done with failed saveEntitiesManyRelations", Logger.INFO);
+				updateEntitysOneToOne(entity);
 				return manager.getIdFromEntity(entity);
 			} else {
 				log.decrementTab("Could not Update Entity: error during execution in database", Logger.ERROR);
@@ -159,6 +158,26 @@ public class OrmUtils {
 			log.decrementTab("Could not Update Entity: getUpdateSql() failed", Logger.ERROR);
 			return -1;
 		}
+	}
+	
+	private static boolean updateEntitysOneToOne(Entity<?> entity) {
+		int id = manager.getIdFromEntity(entity);
+		log.incrementTab("updateEntitysOneToOne " + entity.getTableName() + "...", Logger.INFO);
+		for (FK fk : manager.getOneToOneFksFrom(entity.getClass())) {
+			Entity<?> content = fk.getEntityContentFor(entity);
+			if(content == null && fk.getOwnField().isAnnotationPresent(NotNull.class)) {
+				log.decrementTab("Field: " + fk.getOwnField() + " Is null!", Logger.WARN);
+				return false;
+			}
+			if(content != null) {
+				content.save();
+			} else {//null but valid
+				Delete delete = new Delete(fk.getReferenceTable());
+				delete.where.pkEquals(fk.getPointedId(id)).execute();
+			}
+		}
+		log.decrementTab("Done", Logger.INFO);
+		return false;
 	}
 	
 	/**
@@ -221,7 +240,7 @@ public class OrmUtils {
 		/**
 		 * one to many
 		 * 1. Save all contents
-		 * 2. delete (all) wich are not contained
+		 * 2. delete all wich are not contained
 		 */
 		List<FK> oneToManys = manager.getOneToManyFksPointingTo(entity.getClass());
 		log.info("found " + oneToManys.size() + " ONE_TO_MANY relations: " + oneToManys);
@@ -245,7 +264,7 @@ public class OrmUtils {
 				//Null but valid all contents will be deleted from the database
 			}
 			/**
-			 * delete all wich are not contained in contebnt ids
+			 * delete all wich are not contained in content ids
 			 */
 			log.info("Deleting dead one to many relations");
 			Delete delete = new Delete(fk.getOwnTable());
@@ -715,11 +734,7 @@ public class OrmUtils {
 				log.info("Creating Link table \"" + linkTable.getTableName() + "\"");
 				log.debug(linkTable.getCreateSql());
 				boolean tmp = true;
-				if(state == Orm.READ_WRITE) {
-					db.execute(linkTable.getCreateSql());
-				} else {
-					log.info("Skipped creation of Link table due to READ_ONLY");
-				}
+				db.execute(linkTable.getCreateSql());
 				if(!tmp) {
 					log.warn("Failed creating Link table \"" + linkTable.getTableName() + "\"");
 				}
@@ -744,12 +759,7 @@ public class OrmUtils {
 		SqlParams createParam = new SqlParams("CREATE TABLE `" + table.name() + "`(" + getSqlFieldDeclaraionString(type, foreignKeys) + ")");
 		createParam.sql += "CHARACTER SET = " + table.charset();
 		createParam.sql += " ENGINE =  " + table.engine() + ";";
-		if(state == Orm.READ_WRITE) {
-			return db.execute(createParam);
-		} else {
-			log.info("Skipped creation of table due to READ_ONLY");
-			return true;
-		}
+		return db.execute(createParam);
 	}
 	
 	private static String getSqlFieldDeclaraionString(Class<?> type, List<FK> foreignKeys) {

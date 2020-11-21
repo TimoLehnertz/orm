@@ -2,7 +2,9 @@ package sqlMagic;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
+import orm.Orm;
 import orm.OrmUtils;
 
 public class Where extends SqlParams{
@@ -17,8 +19,22 @@ public class Where extends SqlParams{
 		this.executeReference = executeReference;
 	}
 	
+	@Override
 	public boolean execute() {
-		return executeReference.execute();
+		Orm.logger.warn("Cant invoke execute() on an SQL Logic object!");
+		return false;
+	}
+	
+	@Override
+	public long insert() {
+		Orm.logger.warn("Cant invoke insert() on an SQL Logic object!");
+		return -1;
+	}
+	
+	@Override
+	public List<Map<String, Object>> query() {
+		Orm.logger.warn("Cant invoke query() on an SQL Logic object!");
+		return null;
 	}
 	
 	public WhereLogic pkIn(int ... ids) {
@@ -58,7 +74,7 @@ public class Where extends SqlParams{
 	
 	public WhereLogic pkNotIn(List<Integer> ids) {
 		if(ids.size() == 0) {
-			sql += " FALSE ";//cann not be true so simply inserting false
+			sql += " TRUE ";//cann not be true so simply inserting false
 			return new WhereLogic(this);
 		}
 		sql += "`" + OrmUtils.ENTITY_PK_FIELDNAME + "` NOT IN (";
@@ -140,6 +156,24 @@ public class Where extends SqlParams{
 	
 	public WhereLogic columnLike(String column, String val) {
 		sql += "`" + column + "` LIKE ?";
+		add(val);
+		/**
+		 * stacking
+		 */
+		return new WhereLogic(this);
+	}
+	
+	public WhereLogic columnBigger(String column, int val) {
+		sql += "`" + column + "` > ?";
+		add(val);
+		/**
+		 * stacking
+		 */
+		return new WhereLogic(this);
+	}
+	
+	public WhereLogic columnSmaller(String column, int val) {
+		sql += "`" + column + "` < ?";
 		add(val);
 		/**
 		 * stacking

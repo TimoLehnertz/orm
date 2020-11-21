@@ -8,6 +8,7 @@ import java.util.Map.Entry;
 
 import orm.FK;
 import orm.LinkTable;
+import orm.Orm;
 import orm.OrmUtils;
 import orm.RegisterManager;
 
@@ -26,12 +27,17 @@ public class Delete extends SqlParams {
 	private List<LinkTable> m2mdelete = new ArrayList<>();
 	private List<Integer> ownIds = new ArrayList<>();
 	
-	public Delete(Class<?> class1) {
-		super("DELETE FROM `" + OrmUtils.getTableName(class1) + "`");
-		this.from = class1;
+	public Delete(Class<?> from) {
+		super("DELETE FROM `" + OrmUtils.getTableName(from) + "`");
+		this.from = from;
 		this.where = new Where(this);
 	}
 	
+	@Override
+	protected void reset() {
+		super.reset();
+		sql = "DELETE FROM `" + OrmUtils.getTableName(from) + "`";
+	}
 	
 	private List<Integer> getIdList(){
 		SqlParams select = new SqlParams("SELECT `" + OrmUtils.ENTITY_PK_FIELDNAME + "` FROM `" + OrmUtils.getTableName(from) + "`");
@@ -51,6 +57,7 @@ public class Delete extends SqlParams {
 	
 	@Override
 	protected void beforeExecute() {
+		Orm.logger.info("Deleting from " + from);
 		if(!where.isEmpty()) {
 			sql += " WHERE ";
 			append(where);
@@ -66,7 +73,7 @@ public class Delete extends SqlParams {
 		 */
 		
 		/**
-		 * One To many relations
+		 * One To many relations @ToDo other direction
 		 */
 		List<FK> fks = manager.getOneToManyFksPointingTo(from);
 		for (FK fk : fks) {
@@ -90,6 +97,14 @@ public class Delete extends SqlParams {
 		 * only remember and delete in afterExecute() because otherwise some infinite recursion is about to happen
 		 */
 		m2mdelete = manager.getLinkTablesFromLinkA(from);
+		/**
+		 * One to one ralttions pointing to this table
+		 */
+		for (FK fk : manager.getOneToOnePointingTo(from)) {
+			for (int id : fk.getIdListPointingTo(ownIds)) {
+				fk.setNull(id);
+			}
+		}
 		
 		super.beforeExecute();//have to be last calls in method
 		sql += ";";//have to be last calls in method

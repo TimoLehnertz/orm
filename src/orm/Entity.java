@@ -15,7 +15,10 @@ import sqlMagic.Select;
 
 public class Entity<T extends Entity<?>> {
 	
-	public Delete deleteAll = new Delete(this.getClass());
+	/**
+	 * easy syntactical access to sqlObjetcs
+	 */
+	public Delete delete = new Delete(this.getClass());
 	public Select<T> select = new Select(getClass());
 	
 	
