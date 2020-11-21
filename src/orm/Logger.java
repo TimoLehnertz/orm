@@ -12,7 +12,7 @@ public class Logger {
 	
 	private boolean enabled = true;
 	
-	protected int loglevel = DEBUG;
+	protected int loglevel = WARN;
 	
 	private int tab = 0;
 	

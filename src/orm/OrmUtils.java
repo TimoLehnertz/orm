@@ -18,6 +18,7 @@ import annotations.SqlLontext;
 import annotations.SqlText;
 import annotations.SqlVarchar;
 import annotations.Table;
+import annotations.ToString;
 import sqlMagic.DbConnector;
 import sqlMagic.Delete;
 import sqlMagic.SqlParams;
@@ -688,7 +689,8 @@ public class OrmUtils {
 			}
 		}
 		if(done == manager.fkRelations.size()) {//no sucsess
-			log.warn("Could not define Creation order of tables! Do you have loops in your table scheme?");
+			log.warn("Could not define Creation order of tables! Do you have loops in your table scheme? (this can appear when you only have very few tables too)");
+			log.info("order: " + pseudoCreated);
 		} else { // succsess
 			log.info("Created creation order in " + done + " / " + manager.fkRelations.size() + " iterations :)");
 			log.info("order: " + pseudoCreated);
@@ -995,7 +997,11 @@ public class OrmUtils {
 	 * @return String representation
 	 */
 	public static String stringifyObject(Object o) {
-		return stringifyObject(o, 0);
+		return stringifyObject(o, 0, null);
+	}
+	
+	public static String stringifyObject(Object o, ToString toString) {
+		return stringifyObject(o, 0, toString);
 	}
 	
 	/**
@@ -1025,7 +1031,13 @@ public class OrmUtils {
 	 * @param tabs for recursive calls
 	 * @return String
 	 */
-	private static String stringifyObject(Object o, int tabs) {
+	private static String stringifyObject(Object o, int tabs, ToString parentToString) {
+		ToString toString = o.getClass().getAnnotation(ToString.class);
+		if(parentToString != null) {
+			if(parentToString.inherit() == ToString.INHERIT) {
+				toString = parentToString;
+			}
+		}
 		tabs++;
 		if(SupportedTypes.isTypeSupported(o.getClass())) {
 			if(o instanceof String) {
@@ -1039,7 +1051,7 @@ public class OrmUtils {
 			String out = "[";
 			boolean first = true;
 			for (Object elem : list) {
-				out += (first ? "" : ", ") + stringifyObject(elem, tabs);
+				out += (first ? "" : ", ") + stringifyObject(elem, tabs, toString);
 				first = false;
 			}
 			return out + "]";
@@ -1049,11 +1061,16 @@ public class OrmUtils {
 		Field[] fields = o.getClass().getDeclaredFields();
 		String delimiter = "";
 		for (Field field : fields) {
+			if(toString != null) {
+				if(toString.fields() == ToString.ONLY_ANNOTATED && !field.isAnnotationPresent(ToString.class)) {
+					continue;
+				}
+			}
 			try {
 				field.setAccessible(true);
 				Object fieldContent = field.get(o);
 				if(fieldContent != null) {
-					out += delimiter + "\n" + getnTabs(tabs) +  " \"" + field.getName() + "\": " + stringifyObject(fieldContent, tabs);
+					out += delimiter + "\n" + getnTabs(tabs) +  " \"" + field.getName() + "\": " + stringifyObject(fieldContent, tabs, toString);
 				} else {
 					out += delimiter + "\n" + getnTabs(tabs) +  " \"" + field.getName() + "\": NULL" ;
 				}

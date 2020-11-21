@@ -64,6 +64,33 @@ public class Where extends SqlParams{
 		return new WhereLogic(this);
 	}
 	
+	public WhereLogic fieldIn(String fieldName, Object ... data) {
+		List<Object> dataList = new ArrayList<>();
+		for (Object d : data) {
+			dataList.add(d);
+		}
+		return fieldIn(fieldName, dataList);
+	}
+	
+	public WhereLogic fieldIn(String fieldName, List<Object> data) {
+		if(data.size() == 0) {
+			sql += " FALSE ";//cann not be true so simply inserting false
+			return new WhereLogic(this);
+		}
+		sql += "`" + fieldName + "` IN (";
+		String delimiter = "";
+		for (Object d : data) {
+			sql += delimiter + "?";
+			add(d);
+			delimiter = ", ";
+		}
+		sql += ")";
+		/**
+		 * stacking
+		 */
+		return new WhereLogic(this);
+	}
+	
 	public WhereLogic pkNotIn(int ... ids) {
 		List<Integer> idList = new ArrayList<>();
 		for (int id : ids) {
@@ -71,7 +98,7 @@ public class Where extends SqlParams{
 		}
 		return pkNotIn(idList);
 	}
-	
+
 	public WhereLogic pkNotIn(List<Integer> ids) {
 		if(ids.size() == 0) {
 			sql += " TRUE ";//cann not be true so simply inserting false
@@ -82,6 +109,33 @@ public class Where extends SqlParams{
 		for (Integer id : ids) {
 			sql += delimiter + "?";
 			add(id);
+			delimiter = ", ";
+		}
+		sql += ")";
+		/**
+		 * stacking
+		 */
+		return new WhereLogic(this);
+	}
+	
+	public WhereLogic fieldNotIn(String fieldName, Object ... data) {
+		List<Object> dataList = new ArrayList<>();
+		for (Object d : data) {
+			dataList.add(d);
+		}
+		return fieldNotIn(fieldName, dataList);
+	}
+	
+	public WhereLogic fieldNotIn(String fieldName, List<Object> data) {
+		if(data.size() == 0) {
+			sql += " TRUE ";//cann not be true so simply inserting false
+			return new WhereLogic(this);
+		}
+		sql += "`" + fieldName + "` NOT IN (";
+		String delimiter = "";
+		for (Object d : data) {
+			sql += delimiter + "?";
+			add(d);
 			delimiter = ", ";
 		}
 		sql += ")";
@@ -154,7 +208,7 @@ public class Where extends SqlParams{
 		return new WhereLogic(this);
 	}
 	
-	public WhereLogic columnLike(String column, String val) {
+	public WhereLogic columnLike(String column, Object val) {
 		sql += "`" + column + "` LIKE ?";
 		add(val);
 		/**
@@ -163,7 +217,7 @@ public class Where extends SqlParams{
 		return new WhereLogic(this);
 	}
 	
-	public WhereLogic columnBigger(String column, int val) {
+	public WhereLogic columnBigger(String column, Object val) {
 		sql += "`" + column + "` > ?";
 		add(val);
 		/**
@@ -172,7 +226,7 @@ public class Where extends SqlParams{
 		return new WhereLogic(this);
 	}
 	
-	public WhereLogic columnSmaller(String column, int val) {
+	public WhereLogic columnSmaller(String column, Object val) {
 		sql += "`" + column + "` < ?";
 		add(val);
 		/**

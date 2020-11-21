@@ -73,7 +73,7 @@ public class Delete extends SqlParams {
 		 */
 		
 		/**
-		 * One To many relations @ToDo other direction
+		 * One To many relations
 		 */
 		List<FK> fks = manager.getOneToManyFksPointingTo(from);
 		for (FK fk : fks) {

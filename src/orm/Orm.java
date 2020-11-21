@@ -43,6 +43,15 @@ public class Orm {
 	}
 	
 	/**
+	 * returns a delete object for the given type
+	 * @param type
+	 * @return
+	 */
+	public static Delete deleteFrom(Class<? extends Entity<?>> type) {
+		return new Delete(type);
+	}
+	
+	/**
 	 * Deletes all of a type
 	 * @param type
 	 * @return

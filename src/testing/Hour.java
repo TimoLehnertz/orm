@@ -4,8 +4,10 @@ import java.sql.Time;
 
 import annotations.NotNull;
 import annotations.Table;
+import annotations.ToString;
 import orm.Entity;
 
+@ToString()
 @Table(name = "hour")
 public class Hour extends Entity<Lesson> {
 
@@ -16,6 +18,7 @@ public class Hour extends Entity<Lesson> {
 	@NotNull
 	Time startTime;
 	
+	@ToString
 	@NotNull
 	Time endTime;
 	

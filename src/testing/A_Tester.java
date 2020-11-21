@@ -1,14 +1,11 @@
 package testing;
 
-import java.sql.Date;
 import java.sql.Time;
-import java.time.LocalTime;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 
 import orm.Logger;
 import orm.Orm;
+import sqlMagic.Select;
 
 /**
  * Only intended for testing
@@ -18,70 +15,160 @@ import orm.Orm;
 
 public class A_Tester {
 
+	/**
+	 * selection of test
+	 */
 	public void test() {
-		Subject prg = new Subject("Prg", "Programmieren");
-		Subject wfmd = new Subject("WF_MD", "Photoshop");
-		Subject ep = new Subject("EP", "Elektro-Prozesstechnik");
+//		testBasic();
+//		testSelectWhere();
+		testDeleteWhere();
+//		differentRelations();
+	}
+	
+	private void setup() {
+		Orm.initDb("localhost", "root", "", "orm_test");//db connection / dbname sutup
+		Orm.logger.setLoglevel(Logger.WARN);//reduce console output
+		Orm.dropDatabase();//Drop the database to create a fresh new one in the next step (optional)
+		Orm.initTables(Day.class, Hour.class, Lesson.class, Room.class, SchoolClass.class, Subject.class, Teacher.class, Timetable.class);//Initiating / warning creating tables
+	}
+	
+	/**
+	 * Tests basic initialization / save / update / delete
+	 */
+	public void testBasic() {
+		setup();
+		DummyData dummy1 = new DummyData();
+		DummyData dummy2 = new DummyData();
+		Timetable timetable1 = dummy1.timetable;
+		Timetable timetable2 = dummy2.timetable;
 		
-		Teacher ti = new Teacher("Valentina", "Tikko", Arrays.asList(prg));
-		Teacher goi = new Teacher("Giovanni", "Giovinazzo", Arrays.asList(ep));
-		Teacher ro = new Teacher("Wolfgang", "Rosenthatl", Arrays.asList(wfmd));
+		/**
+		 * 2 should only appear once in the database as the second call to timetable2.save(); should ony update instead of insert
+		 */
 		
-		Room b207 = new Room("B207", 30, true);
+		System.out.println("----------------------------------------------------------------------------------------------------------------------");
+		System.out.println(Orm.selectAll(Timetable.class));// Should be emtpy array
 		
-		SchoolClass ita58 = new SchoolClass("ita58", Arrays.asList(ro, goi));
+		timetable1.save();
+		timetable2.save();
+		timetable2.save();
 		
-		List<Hour> hours = Arrays.asList(
-				new Hour(1, Time.valueOf(LocalTime.of(8, 30)), Time.valueOf(LocalTime.of(9, 15))),
-				new Hour(2, Time.valueOf(LocalTime.of(9, 20)), Time.valueOf(LocalTime.of(10, 5))),
-				new Hour(3, Time.valueOf(LocalTime.of(10, 15)), Time.valueOf(LocalTime.of(11, 0))),
-				new Hour(4, Time.valueOf(LocalTime.of(11, 5)), Time.valueOf(LocalTime.of(11, 50))),
-				new Hour(5, Time.valueOf(LocalTime.of(12, 0)), Time.valueOf(LocalTime.of(12, 45))),
-				new Hour(6, Time.valueOf(LocalTime.of(12, 45)), Time.valueOf(LocalTime.of(13, 30))),
-				new Hour(7, Time.valueOf(LocalTime.of(13, 30)), Time.valueOf(LocalTime.of(14, 15))),
-				new Hour(8, Time.valueOf(LocalTime.of(14, 20)), Time.valueOf(LocalTime.of(15, 5))),
-				new Hour(9, Time.valueOf(LocalTime.of(15, 15)), Time.valueOf(LocalTime.of(16, 0))),
-				new Hour(10, Time.valueOf(LocalTime.of(16, 5)), Time.valueOf(LocalTime.of(16, 50))));
-		
-		List<Lesson> lessons = Arrays.asList(new Lesson(
-						   wfmd, b207, ro, null, hours.get(0)),
-				new Lesson(wfmd, b207, ro, null, hours.get(1)),
-				new Lesson(wfmd, b207, ro, null, hours.get(2)),
-				new Lesson(ep, b207, goi, null, hours.get(3)),
-				new Lesson(ep, b207, goi, null, hours.get(4)),
-				new Lesson(ep, b207, goi, null, hours.get(5)),
-				new Lesson(null, null, null, "Mittagspause", hours.get(6)),
-				new Lesson(prg, b207, ti, null, hours.get(7)),
-				new Lesson(prg, b207, ti, null, hours.get(8)),
-				new Lesson(prg, b207, ti, null, hours.get(9)));
-		
-		Day day = new Day(lessons, Date.valueOf("2020-11-16"));
-		
-		Timetable timetable = new Timetable(new ArrayList<Day>(Arrays.asList(day)), ita58, Date.valueOf("2020-11-16"));
+		System.out.println("----------------------------------------------------------------------------------------------------------------------");
+		System.out.println(Orm.selectAll(Timetable.class));// Should 2 times the same timetable be emtpy array
 		
 		
-		Orm.initDb("localhost", "root", "", "orm_test");
-		Orm.logger.setLoglevel(Logger.DEBUG);
+		/**
+		 * Testing simple delete function
+		 */
+		timetable2.delete();
+		System.out.println("----------------------------------------------------------------------------------------------------------------------");
+		System.out.println(Orm.selectAll(Timetable.class));// Should one timetable
+	}
+	
+	public void testSelectWhere() {
+		setup();
+		/**
+		 * saving two new instances of timetable
+		 */
+		new DummyData().timetable.save();
+		new DummyData().timetable.save();
+		
+		/**
+		 * testing select with where
+		 */
+		Select<Hour> select = Orm.selectFrom(Hour.class);
+		select.query();//calling query will send the Select save the result in the List<T> result and resets the instance of Select
+		System.out.println(select.getResult());
+		
+		Time time = new DummyData().hours.get(5).startTime;
+		System.out.println(time);
+//		12:45:00
+		
+		
+		select.where.columnBigger("startTime", time).or().fieldIn("index", 1, 2, 3).query();//SELECT all hours which start later that 12:45:00 or which index is in 1, 2, or 3
+		
+		
+		System.out.println("----------------------------------------------------------------------------------------------------------------------");
+		System.out.println(select.getResult());
+	}
+	
+	/**
+	 * Desting delete and its where object
+	 */
+	public void testDeleteWhere() {
+		setup();
+		/**
+		 * saving two new instances of timetable
+		 */
+		new DummyData().timetable.save();
+		new DummyData().timetable.save();
+		
+		/**
+		 * testing select with where
+		 */
+		
+		System.out.println(Orm.selectAll(Hour.class));//Show all at start
+		
+		Time time = new DummyData().hours.get(5).startTime;
+		System.out.println(time);//		12:45:00
+
+		Orm.deleteFrom(Hour.class).where.columnBigger("startTime", time).or().fieldIn("index", 1, 2, 3).execute();//DELETE all hours which start later that 12:45:00 or which index is in 1, 2, or 3
+		
+		
+		System.out.println("----------------------------------------------------------------------------------------------------------------------");
+		System.out.println(Orm.selectAll(Hour.class));// expected output: all from start minus hours which start later that 12:45:00 or which index is in 1, 2, or 3
+		
+		System.out.println("----------------------------------------------------------------------------------------------------------------------");
+		System.out.println(Orm.selectAll(Timetable.class));//(see effect on parents hours get deleted here too)
+	}
+	
+	/**
+	 * Understanding the fundamental difference between One To Many and Many To Many
+	 */
+	public void differentRelations() {
+		Orm.logger.setLoglevel(Logger.WARN);
+		Orm.initDb("localhost", "root", "", "orm_test1");
 		Orm.dropDatabase();
-		Orm.initTables(Day.class, Hour.class, Lesson.class, Room.class, SchoolClass.class, Subject.class, Teacher.class, Timetable.class);
-		timetable.save();
-		System.out.println(Orm.selectAll(Timetable.class));
+		Orm.initTables(Dozent.class, StudentOneToMany.class, StudentManyToMany.class);
 		
-		System.out.println("---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------");
+		Dozent a = new Dozent("Dozent a");
+		Dozent b = new Dozent("Dozent b");
+		Dozent c = new Dozent("Dozent c");
 		
-		timetable.schoolClass = null;
-		timetable.save();
-		System.out.println(Orm.selectAll(Timetable.class));
+		/**
+		 * One To Many
+		 */
 		
-//		timetable.deleteAll();
-//		System.out.println(timetable);
-//		timetable.select.query();
-//		System.out.println(timetable.select.getResult());
+		StudentOneToMany s1 = new StudentOneToMany("s1", Arrays.asList(a,b));
+		StudentOneToMany s2 = new StudentOneToMany("s2", Arrays.asList(a,c));
+		StudentOneToMany s3 = new StudentOneToMany("s3", Arrays.asList(b));
 		
-//		timetable.days.remove(0);
-////		System.out.println(timetable);
-//		timetable.save();
-//		
+		s1.save();
+		s2.save();
+		s3.save();
 		
+		/**
+		 * Notice the lecteurs dont all make their way into the students lists because they can only be aplied to one Student as ONE to many
+		 */
+		System.out.println("--------------------------------------One To Many-------------------------------------------------------------------------");
+		System.out.println(Orm.selectAll(StudentOneToMany.class));
+		
+		/**
+		 * many TO Many
+		 */
+		
+		StudentManyToMany s4 = new StudentManyToMany("s4", Arrays.asList(a,b));
+		StudentManyToMany s5 = new StudentManyToMany("s5", Arrays.asList(a,c));
+		StudentManyToMany s6 = new StudentManyToMany("s6", Arrays.asList(b));
+		
+		s4.save();
+		s5.save();
+		s6.save();
+		
+		/**
+		 * Notice the lecteurs are maintained correctly after safe as they are able to map to multiple Students
+		 */
+		System.out.println("-------------------------------Many To Many--------------------------------------------------------------------");
+		System.out.println(Orm.selectAll(StudentManyToMany.class));
 	}
 }

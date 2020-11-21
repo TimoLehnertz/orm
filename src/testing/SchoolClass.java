@@ -4,9 +4,11 @@ import java.util.List;
 
 import annotations.OneToMany;
 import annotations.Table;
+import annotations.ToString;
 import annotations.SqlVarchar;
 import orm.Entity;
 
+@ToString
 @Table(name = "schoolClass")
 public class SchoolClass extends Entity<Lesson> {
 

@@ -179,9 +179,6 @@ public class Select<T extends Entity<?>> extends SqlParams{
 	 */
 	public List<T> getResult() {
 		List<T> tmp = queryResult;
-//		for (T t : queryResult) {
-//			tmp.add(t);
-//		}
 		queryResult = new ArrayList<>();
 		return tmp;
 	}

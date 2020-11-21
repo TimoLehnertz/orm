@@ -1,6 +1,7 @@
 package orm;
 
 import annotations.Table;
+import annotations.ToString;
 import sqlMagic.DbConnector;
 import sqlMagic.Delete;
 import sqlMagic.Select;
@@ -98,6 +99,11 @@ public class Entity<T extends Entity<?>> {
 	 */
 	@Override
 	public String toString() {
-		return OrmUtils.stringifyObject(this);
+		ToString toString = getClass().getAnnotation(ToString.class);
+		if(toString != null) {
+			return OrmUtils.stringifyObject(this, toString);
+		} else {
+			return super.toString();
+		}
 	}
 }

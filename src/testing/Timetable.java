@@ -6,8 +6,10 @@ import java.util.List;
 import annotations.OneToMany;
 import annotations.OneToOne;
 import annotations.Table;
+import annotations.ToString;
 import orm.Entity;
 
+@ToString(fields = ToString.ALL, inherit = ToString.NO_INHERIT)
 @Table(name = "timetable")
 public class Timetable extends Entity<Lesson> {
 
